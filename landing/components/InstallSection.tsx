@@ -32,12 +32,12 @@ export default function InstallSection() {
 
   return (
     <section id="install" className="space-y-6 scroll-mt-8">
-      <div className="px-1">
+        <div className="px-1">
         <div className="section-heading">install</div>
         <p className="section-copy mt-3">
-          setup takes about two minutes. pick the install path you want, add
-          your keys, and you're ready to ask questions. keep the model local
-          with ollama, or point seek at a faster cloud backend.
+          setup takes about two minutes. install seek, run the local setup
+          wizard, paste your keys, and start asking questions. keep the model
+          local with ollama, or point seek at a faster cloud backend.
         </p>
       </div>
 
@@ -121,21 +121,12 @@ export default function InstallSection() {
           <div className="rounded-2xl border border-border-subtle bg-bg-secondary/90 p-5">
             <div className="font-mono text-sm text-accent-mint">03</div>
             <h3 className="mt-2 font-mono text-lg text-text-bright">
-              export and run
+              run setup
             </h3>
             <p className="mt-2 text-sm leading-7 text-text-secondary">
-              <code className="font-mono text-accent-lime">
-                export TAVILY_API_KEY=...
-              </code>{" "}
-              and{" "}
-              <code className="font-mono text-accent-lime">
-                export OPENAI_API_KEY=...
-              </code>{" "}
-              then run{" "}
-              <code className="font-mono text-accent-lime">
-                seek "hello world"
-              </code>
-              .
+              run <code className="font-mono text-accent-lime">seek --setup</code>,
+              paste your keys, then try{" "}
+              <code className="font-mono text-accent-lime">seek "hello world"</code>.
             </p>
           </div>
         </div>

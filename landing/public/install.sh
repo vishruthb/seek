@@ -124,12 +124,6 @@ case ":${PATH}:" in
 	;;
 esac
 
-if "${INSTALL_DIR}/seek" --setup >/dev/null 2>&1; then
-	printf '\n'
-	"${INSTALL_DIR}/seek" --setup || true
-	exit 0
-fi
-
 printf '\n'
 printf '  ┌─────────────────────────────────────────────┐\n'
 printf '  │  seek installed successfully!               │\n'
@@ -144,9 +138,8 @@ printf '  │     → https://console.groq.com              │\n'
 printf '  │     or use Ollama locally:                  │\n'
 printf '  │     → https://ollama.com                    │\n'
 printf '  │                                             │\n'
-printf '  │  3. Export your credentials:                │\n'
-printf '  │     export TAVILY_API_KEY="tvly-..."        │\n'
-printf '  │     export OPENAI_API_KEY="gsk_..."         │\n'
+printf '  │  3. Run the setup wizard:                   │\n'
+printf '  │     seek --setup                            │\n'
 printf '  │                                             │\n'
 printf '  │  4. Try it:                                 │\n'
 printf '  │     seek "hello world"                      │\n'

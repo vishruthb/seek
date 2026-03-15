@@ -9,16 +9,23 @@
 
 AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight.
 
-`seek` is for the moment when you're coding, need a grounded answer, and don't wantto leave the terminal. It uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question.
+`seek` is for the moment when you're coding, need a grounded answer, and don't want to leave the terminal. It uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question.
+
+![seek demo](assets/seek_demo.png)
 
 ## Install
 
 ```bash
-go build -o seek .
-bash install.sh
+curl -fsSL https://vishruthb.github.io/seek/install.sh | sh
 ```
 
-That installs the binary to `~/.local/bin/seek` and creates `~/.config/seek/config.toml` if it does not already exist.
+That installs the binary to `~/.local/bin/seek`.
+
+If you're working from source instead:
+
+```bash
+go build -o ~/.local/bin/seek .
+```
 
 If `seek` is not found after install, add this to `~/.bashrc` or `~/.zshrc`:
 
@@ -35,31 +42,25 @@ source ~/.bashrc
 
 ## Setup
 
+Run the guided setup wizard:
+
+```bash
+seek --setup
+```
+
+That writes `~/.config/seek/config.toml` and prints the exact path when it's done. You can check it anytime with:
+
+```bash
+seek --config
+```
+
 You need:
 
 1. A Tavily API key for search
 2. One answer backend
    `ollama` locally, or `openai` for Groq / OpenRouter / Together / OpenAI-compatible APIs
 
-Check the config path:
-
-```bash
-seek --config
-```
-
 ### Option A: Ollama
-
-```toml
-# ~/.config/seek/config.toml
-tavily_api_key = "tvly-..."
-llm_backend = "ollama"
-ollama_url = "http://localhost:11434"
-ollama_model = "llama3.1:8b"
-output_format = "concise"
-theme = "pastel"
-```
-
-Start Ollama and pull a model:
 
 ```bash
 ollama serve
@@ -67,17 +68,6 @@ ollama pull llama3.1:8b
 ```
 
 ### Option B: Groq
-
-```toml
-# ~/.config/seek/config.toml
-tavily_api_key = "tvly-..."
-llm_backend = "openai"
-openai_api_key = "gsk-..."
-openai_base_url = "https://api.groq.com/openai"
-openai_model = "llama-3.3-70b-versatile"
-output_format = "concise"
-theme = "pastel"
-```
 
 You can also keep secrets in env vars instead of the config file:
 
@@ -110,12 +100,14 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 /backend ollama
 /mode concise
 /mode learning
+/format explanatory
 /model llama-3.3-70b-versatile
 /depth advanced
 /results 8
 /copy
 /show
 /help
+/exit
 ```
 
 ## Core keys

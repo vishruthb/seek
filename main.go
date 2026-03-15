@@ -27,6 +27,7 @@ func run() int {
 		formatOverride  string
 		resultsOverride int
 		printConfig     bool
+		runSetupWizard  bool
 		printVersion    bool
 	)
 
@@ -36,11 +37,19 @@ func run() int {
 	flag.StringVar(&formatOverride, "format", "", "override the response format (concise, learning, explanatory, oneliner)")
 	flag.IntVar(&resultsOverride, "results", 0, "override Tavily max search results")
 	flag.BoolVar(&printConfig, "config", false, "print the config path and exit")
+	flag.BoolVar(&runSetupWizard, "setup", false, "create or update ~/.config/seek/config.toml interactively")
 	flag.BoolVar(&printVersion, "version", false, "print version information and exit")
 	flag.Parse()
 
 	if printConfig {
 		fmt.Println(ConfigPath())
+		return 0
+	}
+	if runSetupWizard {
+		if err := runSetup(); err != nil {
+			fmt.Fprintf(os.Stderr, "seek: setup failed: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 	if printVersion {

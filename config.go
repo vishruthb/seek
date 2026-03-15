@@ -63,21 +63,34 @@ func ConfigPath() string {
 	if err != nil {
 		return ".config/seek/config.toml"
 	}
-	return filepath.Join(home, ".config", "seek", "config.toml")
+	return filepath.Join(configDirPath(home), "config.toml")
+}
+
+func configDirPath(home string) string {
+	return filepath.Join(home, ".config", "seek")
 }
 
 func LoadConfig() (Config, error) {
+	cfg, err := loadConfigFile(ConfigPath())
+	if err != nil {
+		return cfg, err
+	}
+	applyEnvOverrides(&cfg)
+	cfg.normalize()
+	return cfg, nil
+}
+
+func loadConfigFile(path string) (Config, error) {
 	cfg := DefaultConfig()
 
-	if _, err := os.Stat(ConfigPath()); err == nil {
-		if _, err := toml.DecodeFile(ConfigPath(), &cfg); err != nil {
+	if _, err := os.Stat(path); err == nil {
+		if _, err := toml.DecodeFile(path, &cfg); err != nil {
 			return cfg, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return cfg, err
 	}
 
-	applyEnvOverrides(&cfg)
 	cfg.normalize()
 	return cfg, nil
 }

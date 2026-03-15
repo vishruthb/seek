@@ -1,6 +1,32 @@
-seek
-landing/.next
-landing/node_modules
-landing/out
-landing/.vercel
+# macOS / OS cruft
+.DS_Store
+Thumbs.db
+
+# local env / editor files
+.env
+.env.*
+*.local
+
+# go build artifacts
+/seek
+*.test
+*.coverprofile
+coverage.out
+dist/
+checksums.txt
+*.tar.gz
+*.tgz
+
+# landing build artifacts
+landing/node_modules/
+landing/.next/
+landing/out/
+landing/.vercel/
 landing/tsconfig.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*

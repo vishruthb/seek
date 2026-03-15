@@ -1,5 +1,3 @@
-# `seek`
-
 ```text
  SSSSS  EEEEE  EEEEE  K   K
 SS      EE     EE     K  K
@@ -10,7 +8,7 @@ SSSSS   EEEEE  EEEEE  K   K
 
 AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight.
 
-`seek` is for the moment when you are coding, need a grounded answer, and do not want to leave the terminal. It uses Tavily for fresh web results and either Ollama or an OpenAI-compatible backend for the answer layer.
+`seek` is for the moment when you're coding, need a grounded answer, and don't wantto leave the terminal. It uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question.
 
 ## Install
 
@@ -100,7 +98,7 @@ seek --backend ollama "compare goroutines and threads"
 seek
 ```
 
-When launched with plain `seek`, the input opens immediately.
+When launched with plain `seek`, the input window opens immediately.
 
 ### In-session slash commands
 
@@ -132,22 +130,4 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 | `o` | Open the selected source |
 | `q` | Quit |
 
-## Test
-
-```bash
-make test
-```
-
-The test suite covers:
-
-- config loading and precedence
-- Tavily request/response handling
-- OpenAI-compatible SSE streaming
-- Ollama NDJSON streaming
-- prompt construction
-- app-level query, follow-up, and rendering flow
-
-## Notes
-
-- `seek` is intentionally small: one binary, no browser UI, no background services.
-- The sources list in the lower panel is the canonical source view; `seek` strips redundant trailing `Sources` sections from model output.
+`seek` is intentionally small. One binary, no browser UI, no background services.

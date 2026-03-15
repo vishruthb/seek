@@ -1,0 +1,39 @@
+# === Search ===
+# Tavily API key (or set TAVILY_API_KEY env var)
+# Get one free at https://tavily.com
+tavily_api_key = ""
+# Search depth: "basic" (fast, 1 credit) or "advanced" (thorough, 2 credits)
+search_depth = "basic"
+# Max search results to fetch (more = better context but more tokens)
+max_results = 5
+
+# === LLM Backend ===
+# Choose: "ollama" or "openai"
+llm_backend = "ollama"
+
+# -- Ollama settings --
+ollama_url = "http://localhost:11434"
+ollama_model = "llama3.1:8b"
+
+# -- OpenAI-compatible settings (works with Groq, Together, OpenRouter, etc.) --
+# API key (or set OPENAI_API_KEY env var)
+openai_api_key = ""
+# Base URL examples:
+#   Groq:       https://api.groq.com/openai
+#   Together:   https://api.together.xyz
+#   OpenRouter: https://openrouter.ai/api
+#   OpenAI:     https://api.openai.com
+openai_base_url = "https://api.groq.com/openai"
+openai_model = "llama-3.3-70b-versatile"
+
+# Response shape: "concise", "learning", "explanatory", "oneliner"
+output_format = "concise"
+
+# === UI ===
+theme = "pastel"
+# Print summary to stdout on quit (default false, toggle with `p` in TUI)
+print_on_exit = false
+# Default browser command (leave empty for system default)
+browser = ""
+# Max conversation turns to keep in context (for follow-ups)
+max_turns = 10

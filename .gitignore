@@ -1,1 +1,6 @@
 seek
+landing/.next
+landing/node_modules
+landing/out
+landing/.vercel
+landing/tsconfig.tsbuildinfo

@@ -8,11 +8,17 @@ import (
 )
 
 const seekLogo = "" +
-	" SSSSS  EEEEE  EEEEE  K   K\n" +
-	"SS      EE     EE     K  K \n" +
-	" SSSS   EEEE   EEEE   KKK  \n" +
-	"    SS  EE     EE     K  K \n" +
-	"SSSSS   EEEEE  EEEEE  K   K"
+	"███████╗███████╗███████╗██╗ ██╗\n" +
+	"██╔════╝██╔════╝██╔════╝██║ ██╔╝\n" +
+	"███████╗█████╗ █████╗ █████╔╝\n" +
+	"╚════██║██╔══╝ ██╔══╝ ██╔═██╗\n" +
+	"███████║███████╗███████╗██║ ██╗\n" +
+	"╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝"
+
+const compactSeekLogo = "" +
+	"███████╗███████╗███████╗██╗ ██╗\n" +
+	"╚════██║██╔════╝██╔════╝██║ ██╔╝\n" +
+	"███████║███████╗███████╗█████╔╝ "
 
 type CodePreview struct {
 	Index    int
@@ -22,11 +28,6 @@ type CodePreview struct {
 }
 
 type ComposerState struct {
-	Backend   string
-	Model     string
-	Format    string
-	Depth     string
-	Results   int
 	LastQuery string
 	Draft     string
 }
@@ -36,21 +37,38 @@ func RenderPlaceholder(styles Styles, width, height int, body string) string {
 	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Center, block)
 }
 
-func RenderSplash(styles Styles, width, height int, format, backend string) string {
+func PreferredSplashHeight(width int) int {
+	if width <= 0 {
+		return 3
+	}
+	logo := selectSplashLogo(width, 0)
+	return strings.Count(logo, "\n") + 1 + 2
+}
+
+func RenderSplash(styles Styles, width, height int, _ string, _ string) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
 
-	content := strings.Join([]string{
-		styles.SplashLogo.Render(seekLogo),
-		"",
-		styles.SplashTagline.Render("Search grounded answers without leaving the terminal."),
-		styles.SplashMeta.Render(fmt.Sprintf("format: %s  ·  backend: %s", format, backend)),
-		"",
-		styles.SplashHint.Render("Type a query below or use /help"),
-	}, "\n")
+	logo := selectSplashLogo(width, height)
 
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+	lines := []string{
+		styles.SplashLogo.Width(width).Render(logo),
+		styles.SplashTagline.Width(width).Render("Search grounded answers without leaving the terminal."),
+	}
+	lines = append(lines, styles.SplashHint.Width(width).Render("Start typing below or use /"))
+
+	content := strings.Join(lines, "\n")
+	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Bottom, content)
+}
+
+func RenderWelcomeHint(styles Styles, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+
+	line := styles.ComposerHint.Width(width).Align(lipgloss.Center).Render("/ for commands")
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, line)
 }
 
 func RenderCodeSelection(styles Styles, width, height int, previews []CodePreview, selected int) string {
@@ -79,9 +97,13 @@ func RenderCodeBlock(styles Styles, width int, language, content string) string 
 		return strings.TrimRight(content, "\n")
 	}
 
-	body := styles.CodeBody.Render(strings.TrimRight(content, "\n"))
+	innerWidth := max(0, width-styles.CodeBlockFrame.GetHorizontalFrameSize())
+	body := styles.CodeBody.
+		Width(innerWidth).
+		MaxWidth(innerWidth).
+		Render(strings.TrimRight(content, "\n"))
 	label := styles.CodeBlockHeader.Render(strings.ToUpper(safeLanguage(language)))
-	headWidth := max(0, width-lipgloss.Width(label)-2)
+	headWidth := max(0, innerWidth-lipgloss.Width(label))
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Center,
 		label,
@@ -98,27 +120,14 @@ func RenderComposer(styles Styles, width, height int, state ComposerState) strin
 	}
 
 	innerWidth := max(0, width-4)
-	lines := []string{
-		styles.CodeLabel.Render(fmt.Sprintf("backend %s", state.Backend)) +
-			"  " + styles.CodeLabel.Render(fmt.Sprintf("format %s", state.Format)) +
-			"  " + styles.CodeLabel.Render(fmt.Sprintf("depth %s", state.Depth)) +
-			"  " + styles.CodeLabel.Render(fmt.Sprintf("results %d", state.Results)),
-	}
-
-	if strings.TrimSpace(state.Model) != "" {
-		lines = append(lines, styles.ComposerMeta.Width(innerWidth).Render("model: "+state.Model))
-	}
+	lines := []string{styles.CodeLabel.Width(innerWidth).Render("start typing...")}
 	if strings.TrimSpace(state.LastQuery) != "" {
-		lines = append(lines, styles.ComposerHint.Width(innerWidth).Render("continuing from: "+truncate(state.LastQuery, innerWidth-18)))
+		lines = append(lines, styles.ComposerMeta.Width(innerWidth).Render("follow-up context: "+truncate(state.LastQuery, innerWidth-19)))
 	}
 	if strings.TrimSpace(state.Draft) != "" {
 		lines = append(lines, styles.ComposerMeta.Width(innerWidth).Render("draft: "+truncate(state.Draft, innerWidth-8)))
 	}
-
-	lines = append(lines,
-		"",
-		styles.ComposerHint.Width(innerWidth).Render("Enter submit · Esc cancel · /backend, /mode, /model, /depth, /results, /copy"),
-	)
+	lines = append(lines, styles.ComposerHint.Width(innerWidth).Render("use / for backend, mode, model, depth, results, copy"))
 
 	body := strings.Join(lines, "\n")
 	return styles.ComposerPanel.Width(width).Height(height).Render(body)
@@ -148,4 +157,20 @@ func truncate(value string, width int) string {
 		cut = len(runes)
 	}
 	return string(runes[:cut]) + "..."
+}
+
+func selectSplashLogo(width, height int) string {
+	for _, candidate := range []string{seekLogo, compactSeekLogo} {
+		if width < lipgloss.Width(candidate) {
+			continue
+		}
+		if height > 0 {
+			requiredHeight := strings.Count(candidate, "\n") + 1 + 2
+			if height < requiredHeight {
+				continue
+			}
+		}
+		return candidate
+	}
+	return "SEEK"
 }

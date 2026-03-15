@@ -136,7 +136,7 @@ func NewModel(cfg Config, initialQuery string, searchProvider searchpkg.SearchPr
 	spin.Style = styles.Spinner
 
 	follow := ui.NewFollowUpInput(styles)
-	follow.Placeholder = "ask a question or use /help"
+	follow.Placeholder = "start typing... use / for commands"
 	searchInput := ui.NewSearchInput(styles)
 	searchInput.Placeholder = "search within the summary"
 
@@ -208,6 +208,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.state = StateViewing
 			m.syncSources()
+			m.applyLayout()
 			m.refreshViewport(false)
 			return m, nil
 		}
@@ -218,6 +219,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.waitingFirstToken = true
 		m.syncSources()
+		m.applyLayout()
 		m.refreshViewport(false)
 		return m, tea.Batch(m.startLLMStream(msg.Results), m.spinner.Tick)
 
@@ -229,6 +231,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.waitingFirstToken = false
 			if m.state == StateLoading {
 				m.state = StateViewing
+				m.applyLayout()
 			}
 		}
 		m.streaming = true
@@ -248,6 +251,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finishRequest()
 		if m.state == StateLoading {
 			m.state = StateViewing
+			m.applyLayout()
 		}
 		m.refreshViewport(m.autoScroll)
 		return m, nil
@@ -262,6 +266,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.state = StateViewing
 		m.syncSources()
+		m.applyLayout()
 		m.refreshViewport(false)
 		return m, nil
 
@@ -310,13 +315,17 @@ func (m *model) View() string {
 		return ""
 	}
 
-	parts := []string{
-		m.headerView(),
-		m.summaryView(),
-		m.sourcesSectionView(),
-		m.footerView(),
+	parts := make([]string, 0, 4)
+	if !m.isStartupState() {
+		parts = append(parts, m.headerView())
 	}
-	return m.styles.AppFrame.Render(strings.Join(parts, "\n"))
+	parts = append(parts, m.summaryView())
+	if !m.isPlainStartupState() {
+		parts = append(parts, m.sourcesSectionView())
+	}
+	parts = append(parts, m.footerView())
+	frame := m.styles.AppFrame.Render(strings.Join(parts, "\n"))
+	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Bottom, frame)
 }
 
 func (m *model) FinalOutput() string {
@@ -366,11 +375,17 @@ func (m *model) handleInputKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		m.followInput.Blur()
 		m.followInput.SetValue("")
+		if len(m.turns) == 0 {
+			m.state = StateInput
+			m.applyLayout()
+			m.refreshViewport(false)
+			return m.followInput.Focus()
+		}
 		m.state = StateViewing
-		return nil
+		return m.syncLayout(false)
 	case "tab":
 		if m.tryAutocompleteSlashCommand() {
-			return nil
+			return m.syncLayout(false)
 		}
 		return nil
 	case "enter":
@@ -387,6 +402,10 @@ func (m *model) handleInputKeys(msg tea.KeyMsg) tea.Cmd {
 	default:
 		var cmd tea.Cmd
 		m.followInput, cmd = m.followInput.Update(msg)
+		if len(m.turns) == 0 {
+			m.applyLayout()
+			m.refreshViewport(false)
+		}
 		return cmd
 	}
 }
@@ -396,11 +415,12 @@ func (m *model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		m.searchInput.Blur()
 		m.state = StateViewing
-		return nil
+		return m.syncLayout(false)
 	case "enter":
 		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
 		m.searchInput.Blur()
 		m.state = StateViewing
+		m.applyLayout()
 		m.refreshViewport(false)
 		if len(m.searchMatches) == 0 && m.searchQuery != "" {
 			return m.flash("No matches found", "warning")
@@ -421,7 +441,7 @@ func (m *model) handleCodeSelectKeys(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case "esc":
 		m.state = StateViewing
-		return nil
+		return m.syncLayout(false)
 	case "j", "down":
 		if m.codeSelect < len(m.codeBlocks)-1 {
 			m.codeSelect++
@@ -452,7 +472,7 @@ func (m *model) handleSourcesKeys(msg tea.KeyMsg) tea.Cmd {
 	case "tab":
 		m.state = StateViewing
 		m.sourcesList.Blur()
-		return nil
+		return m.syncLayout(false)
 	case "j", "down":
 		m.sourcesList.Next()
 	case "k", "up":
@@ -497,9 +517,12 @@ func (m *model) handleViewingKeys(msg tea.KeyMsg) tea.Cmd {
 	case "tab":
 		m.state = StateSources
 		m.sourcesList.Focus()
+		return m.syncLayout(false)
 	case "f":
 		m.state = StateInput
 		m.followInput.SetValue("")
+		m.applyLayout()
+		m.refreshViewport(false)
 		return m.followInput.Focus()
 	case "y":
 		if strings.TrimSpace(m.output) == "" {
@@ -511,6 +534,8 @@ func (m *model) handleViewingKeys(msg tea.KeyMsg) tea.Cmd {
 	case "/":
 		m.state = StateSearchInput
 		m.searchInput.SetValue(m.searchQuery)
+		m.applyLayout()
+		m.refreshViewport(false)
 		return m.searchInput.Focus()
 	case "n":
 		if len(m.searchMatches) > 0 {
@@ -567,6 +592,7 @@ func (m *model) beginQuery(query string, followUp bool) {
 	m.codeBlocks = nil
 	m.codeSelect = 0
 	m.syncSources()
+	m.applyLayout()
 	m.refreshViewport(true)
 }
 
@@ -590,6 +616,7 @@ func (m *model) retryCurrentTurn() tea.Cmd {
 	m.newContent = false
 	m.state = StateLoading
 	m.syncSources()
+	m.applyLayout()
 	m.refreshViewport(true)
 	return tea.Batch(m.startSearch(), m.spinner.Tick)
 }
@@ -663,22 +690,53 @@ func (m *model) applyLayout() {
 	}
 
 	m.contentW = max(18, m.width-2)
-	m.contentH = max(6, m.height-2)
-	m.summaryW = max(12, m.contentW-2)
+	maxContentH := max(6, m.height-2)
+	if len(m.turns) == 0 {
+		m.contentH = min(maxContentH, 14)
+	} else {
+		m.contentH = min(maxContentH, 28)
+	}
+	m.summaryW = max(12, m.contentW)
 
 	headerH := 1
+	if len(m.turns) == 0 {
+		headerH = 0
+	}
 	footerH := 1
+	if m.state == StateInput || m.state == StateSearchInput {
+		footerH = 1 + m.styles.InputBar.GetVerticalFrameSize()
+	}
 
-	sourcesH := min(6, max(4, len(m.currentSources())+2))
+	sourcesH := 0
+	switch {
+	case len(m.turns) == 0:
+		if m.isSlashInput() {
+			sourcesH = 6
+		}
+	case m.state == StateInput && !m.isSlashInput():
+		sourcesH = 5
+	default:
+		sourcesH = 6
+	}
+
 	available := m.contentH - headerH - footerH
-	if available < 6 {
-		sourcesH = max(3, available/3)
+	minSummary := 6
+	if len(m.turns) == 0 {
+		minSummary = 3
 	}
-	if sourcesH >= available {
-		sourcesH = max(3, available-3)
+	if sourcesH > 0 && available-sourcesH < minSummary {
+		sourcesH = max(3, available-minSummary)
 	}
-	m.sourcesH = max(3, sourcesH)
+	if sourcesH > 0 {
+		m.sourcesH = max(3, sourcesH)
+	} else {
+		m.sourcesH = 0
+	}
 	m.summaryH = max(3, available-m.sourcesH)
+	if m.isPlainStartupState() {
+		preferred := ui.PreferredSplashHeight(max(12, m.contentW-2)) + 2
+		m.summaryH = min(max(3, available), preferred)
+	}
 
 	m.viewport.Width = max(8, m.summaryW-m.styles.SummaryPanel.GetHorizontalFrameSize())
 	m.viewport.Height = max(1, m.summaryH-m.styles.SummaryPanel.GetVerticalFrameSize())
@@ -741,12 +799,6 @@ func (m *model) composeTranscript() string {
 		if idx > 0 {
 			b.WriteString("\n\n---\n\n")
 		}
-
-		label := "Query"
-		if turn.IsFollowUp {
-			label = "Follow-up"
-		}
-		fmt.Fprintf(&b, "## %s: %q\n\n", label, turn.Query)
 
 		switch {
 		case strings.TrimSpace(turn.Error) != "":
@@ -905,13 +957,14 @@ func (m *model) headerView() string {
 	}
 
 	left := m.styles.HeaderBrand.Render("seek")
-	center := m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", query))
 	rightCount := "[0/0]"
 	if m.queryCount > 0 {
 		rightCount = fmt.Sprintf("[%d/%d]", m.queryCount, m.queryCount)
 	}
 	right := m.styles.HeaderCounter.Render(rightCount)
 
+	maxQueryWidth := max(12, m.contentW-lipgloss.Width(left)-lipgloss.Width(right)-6)
+	center := m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", truncateForHeader(query, maxQueryWidth-2)))
 	space := max(0, m.contentW-lipgloss.Width(left)-lipgloss.Width(center)-lipgloss.Width(right)-4)
 	row := left + " │ " + center + strings.Repeat(" ", space) + right
 	return m.styles.HeaderBar.Width(m.contentW).Render(row)
@@ -926,7 +979,7 @@ func (m *model) summaryView() string {
 	}
 
 	if len(m.turns) == 0 {
-		return m.wrapSummary(ui.RenderSplash(m.styles, summaryWidth, summaryHeight, m.config.OutputFormat, m.llmProvider.Name()))
+		return m.wrapStartup(ui.RenderSplash(m.styles, max(12, m.contentW-2), max(3, m.summaryH), m.config.OutputFormat, m.llmProvider.Name()))
 	}
 
 	if m.currentTurn >= 0 && strings.TrimSpace(m.turns[m.currentTurn].Response) == "" {
@@ -967,6 +1020,9 @@ func (m *model) footerView() string {
 }
 
 func (m *model) sourcesSectionView() string {
+	if len(m.turns) == 0 && m.state == StateInput && !m.isSlashInput() {
+		return ui.RenderWelcomeHint(m.styles, m.contentW, max(1, m.sourcesH))
+	}
 	if m.state == StateInput && m.isSlashInput() {
 		return m.renderSlashSuggestions()
 	}
@@ -1016,12 +1072,7 @@ func (m *model) statusMeta() string {
 
 func (m *model) renderComposer() string {
 	state := ui.ComposerState{
-		Backend: m.config.LLMBackend,
-		Model:   activeModel(m.config),
-		Format:  m.config.OutputFormat,
-		Depth:   m.config.SearchDepth,
-		Results: m.config.MaxResults,
-		Draft:   strings.TrimSpace(m.followInput.Value()),
+		Draft: strings.TrimSpace(m.followInput.Value()),
 	}
 	if m.currentTurn >= 0 {
 		state.LastQuery = m.turns[m.currentTurn].Query
@@ -1109,31 +1160,62 @@ func (m *model) wrapSummary(content string) string {
 	return m.styles.SummaryPanel.Width(m.summaryW).Height(m.summaryH).Render(content)
 }
 
+func (m *model) wrapStartup(content string) string {
+	return lipgloss.NewStyle().
+		Width(m.contentW).
+		Height(m.summaryH).
+		Padding(0, 1).
+		Render(content)
+}
+
+func (m *model) isStartupState() bool {
+	return len(m.turns) == 0 && m.state == StateInput
+}
+
+func (m *model) isPlainStartupState() bool {
+	return m.isStartupState() && !m.isSlashInput()
+}
+
+func (m *model) syncLayout(forceBottom bool) tea.Cmd {
+	m.applyLayout()
+	m.refreshViewport(forceBottom)
+	return nil
+}
+
 func (m *model) executeSlashCommand(raw string) tea.Cmd {
 	commandLine := strings.TrimSpace(strings.TrimPrefix(raw, "/"))
 	parts := strings.Fields(commandLine)
 	if len(parts) == 0 {
-		m.state = StateViewing
 		m.followInput.SetValue("")
-		m.followInput.Blur()
-		return m.flash("Available: /backend /mode /model /depth /results /show /help", "warning")
+		m.applyLayout()
+		m.refreshViewport(false)
+		return m.flash("Available: /backend /mode /model /depth /results /show /help /exit", "warning")
 	}
 
 	command := strings.ToLower(parts[0])
 	args := parts[1:]
 
 	switch command {
+	case "exit", "quit":
+		m.stopActiveRequest()
+		return tea.Quit
 	case "help":
 		m.followInput.SetValue("")
-		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend <ollama|openai>, /mode|/format <concise|learning|explanatory|oneliner>, /model <name>, /depth <basic|advanced>, /results <n>, /copy, /show", "success"))
+		m.applyLayout()
+		m.refreshViewport(false)
+		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
 		m.followInput.SetValue("")
+		m.applyLayout()
+		m.refreshViewport(false)
 		return tea.Batch(m.followInput.Focus(), m.flash(m.sessionSummary(), "success"))
 	case "copy":
 		if strings.TrimSpace(m.composeTranscript()) == "" || len(m.turns) == 0 {
 			return m.failSlashCommand("Nothing to copy yet")
 		}
 		m.followInput.SetValue("")
+		m.applyLayout()
+		m.refreshViewport(false)
 		return tea.Batch(m.followInput.Focus(), copyTextCmd(m.composeTranscript(), "chat history", lineCount(m.composeTranscript())))
 	case "backend":
 		if len(args) != 1 {
@@ -1213,6 +1295,7 @@ func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
 	m.orchestrator = NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat)
 
 	m.followInput.SetValue("")
+	m.applyLayout()
 	m.refreshViewport(false)
 	return tea.Batch(m.followInput.Focus(), m.flash(successText+" · "+m.sessionSummary(), "success"))
 }
@@ -1445,6 +1528,7 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		{Name: "copy", Usage: "/copy", Description: "copy the full chat history including follow-ups"},
 		{Name: "show", Usage: "/show", Description: "show the active session configuration"},
 		{Name: "help", Usage: "/help", Description: "list available slash commands"},
+		{Name: "exit", Usage: "/exit", Description: "gracefully exit seek"},
 	}
 
 	if query == "" {
@@ -1538,6 +1622,27 @@ func clearScreenCmd() tea.Cmd {
 	return func() tea.Msg {
 		return tea.ClearScreen()
 	}
+}
+
+func truncateForHeader(value string, width int) string {
+	value = strings.TrimSpace(value)
+	if width <= 0 || lipgloss.Width(value) <= width {
+		return value
+	}
+
+	runes := []rune(value)
+	if width <= 3 {
+		if width > len(runes) {
+			width = len(runes)
+		}
+		return string(runes[:width])
+	}
+
+	cut := width - 3
+	if cut > len(runes) {
+		cut = len(runes)
+	}
+	return string(runes[:cut]) + "..."
 }
 
 func min(a, b int) int {

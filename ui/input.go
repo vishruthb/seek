@@ -3,11 +3,11 @@ package ui
 import "github.com/charmbracelet/bubbles/textinput"
 
 func NewFollowUpInput(styles Styles) textinput.Model {
-	return newInput("Follow-up: ", styles)
+	return newInput("› ", styles)
 }
 
 func NewSearchInput(styles Styles) textinput.Model {
-	return newInput("/ ", styles)
+	return newInput(" / ", styles)
 }
 
 func RenderInput(styles Styles, input textinput.Model, width int) string {

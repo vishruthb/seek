@@ -1,9 +1,10 @@
 ```text
- SSSSS  EEEEE  EEEEE  K   K
-SS      EE     EE     K  K
- SSSS   EEEE   EEEE   KKK
-    SS  EE     EE     K  K
-SSSSS   EEEEE  EEEEE  K   K
+███████╗███████╗███████╗██╗ ██╗
+██╔════╝██╔════╝██╔════╝██║ ██╔╝
+███████╗█████╗ █████╗ █████╔╝
+╚════██║██╔══╝ ██╔══╝ ██╔═██╗
+███████║███████╗███████╗██║ ██╗
+╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝
 ```
 
 AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight.

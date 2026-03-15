@@ -10,6 +10,7 @@ import (
 
 	llmpkg "seek/llm"
 	searchpkg "seek/search"
+	"seek/ui"
 )
 
 type fakeSearchProvider struct {
@@ -91,6 +92,75 @@ func TestSanitizeAssistantResponseKeepsInlineCitations(t *testing.T) {
 	}
 }
 
+func TestStartupLayoutStaysCompactWithoutExtraMiddlePanel(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 160
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	if m.contentW != 158 {
+		t.Fatalf("expected startup content width to use the terminal width, got %d", m.contentW)
+	}
+	if m.sourcesH != 0 {
+		t.Fatalf("expected no middle sources/composer panel on empty startup, got %d", m.sourcesH)
+	}
+	if m.contentH != 14 {
+		t.Fatalf("expected capped startup shell height, got %d", m.contentH)
+	}
+	expectedSplashHeight := ui.PreferredSplashHeight(m.contentW-2) + 2
+	if m.summaryH != expectedSplashHeight {
+		t.Fatalf("expected startup summary height %d, got %d", expectedSplashHeight, m.summaryH)
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "███████╗") {
+		t.Fatalf("expected the startup view to show the seek logo, got %q", view)
+	}
+	if strings.Contains(view, "press `f` to search") {
+		t.Fatalf("expected startup view to omit the header strip, got %q", view)
+	}
+	if strings.Contains(view, "┌") {
+		t.Fatalf("expected startup view to avoid nested summary boxes, got %q", view)
+	}
+	if strings.Contains(view, "\n││                                                           / for commands") {
+		t.Fatalf("expected no extra middle helper strip in empty startup view, got %q", view)
+	}
+}
+
+func TestStartupEscapeKeepsInputModeAndBottomAnchoredShell(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 120
+	m.height = 36
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.state != StateInput {
+		t.Fatalf("expected startup esc to stay in input mode, got %v", m.state)
+	}
+
+	view := m.View()
+	if idx := strings.Index(view, "╭"); idx <= 0 {
+		t.Fatalf("expected bottom-anchored startup shell with leading padding, got %q", view)
+	}
+}
+
+func TestExitSlashCommandReturnsQuit(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+
+	cmd := m.executeSlashCommand("/exit")
+	if cmd == nil {
+		t.Fatal("expected /exit to return a quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("expected /exit to emit tea.QuitMsg")
+	}
+}
+
 func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) {
 	searchProvider := &fakeSearchProvider{
 		results: map[string][]searchpkg.SearchResult{
@@ -126,8 +196,20 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	if len(m.turns) != 1 || len(m.currentSources()) != 1 {
 		t.Fatalf("expected first turn with sources, got turns=%d sources=%d", len(m.turns), len(m.currentSources()))
 	}
+	if m.contentH != 28 {
+		t.Fatalf("expected capped active shell height, got %d", m.contentH)
+	}
+	if m.sourcesH != 6 {
+		t.Fatalf("expected standardized sources panel height, got %d", m.sourcesH)
+	}
 	if strings.Contains(m.composeTranscript(), "## Sources") {
 		t.Fatalf("expected trailing sources section to be stripped from transcript, got %q", m.composeTranscript())
+	}
+	if strings.Contains(m.composeTranscript(), "## Query:") || strings.Contains(m.composeTranscript(), "## Follow-up:") {
+		t.Fatalf("expected transcript to omit query headings, got %q", m.composeTranscript())
+	}
+	if !strings.Contains(m.View(), "seek │ \"what is a transformer\"") {
+		t.Fatalf("expected active session header to stay visible, got %q", m.View())
 	}
 
 	driveQueryCycle(t, m, "what about attention heads", true)

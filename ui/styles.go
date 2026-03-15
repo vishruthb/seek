@@ -109,17 +109,15 @@ func LoadTheme(name string) Styles {
 			Bold(true),
 		SummaryPanel: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Text)).
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		SourcesPanel: lipgloss.NewStyle().
-			Background(lipgloss.Color(palette.Panel)).
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Border)).
 			Padding(0, 1),
 		SourcesPanelFocus: lipgloss.NewStyle().
-			Background(lipgloss.Color(palette.Panel)).
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		SourceLine: lipgloss.NewStyle().
@@ -139,7 +137,9 @@ func LoadTheme(name string) Styles {
 			Foreground(lipgloss.Color("#2f4a32")),
 		InputBar: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Text)).
-			Background(lipgloss.Color("#253329")),
+			Border(lipgloss.NormalBorder(), true, false, false, false).
+			BorderForeground(lipgloss.Color(palette.Highlight)).
+			Padding(0, 1),
 		InputPrompt: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Accent)).
 			Bold(true),
@@ -166,11 +166,11 @@ func LoadTheme(name string) Styles {
 			Foreground(lipgloss.Color(palette.Ink)).
 			Bold(true),
 		CodeCard: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		CodeCardSelected: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		CodeLabel: lipgloss.NewStyle().
@@ -179,7 +179,7 @@ func LoadTheme(name string) Styles {
 		CodeBody: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Text)),
 		CodeBlockFrame: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		CodeBlockHeader: lipgloss.NewStyle().
@@ -187,12 +187,11 @@ func LoadTheme(name string) Styles {
 			Bold(true).
 			Padding(0, 1),
 		ComposerPanel: lipgloss.NewStyle().
-			Background(lipgloss.Color(palette.Panel)).
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(palette.Highlight)).
 			Padding(0, 1),
 		ComposerMeta: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cfecc6")),
+			Foreground(lipgloss.Color(palette.Text)),
 		ComposerHint: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Dim)),
 		Spinner: lipgloss.NewStyle().

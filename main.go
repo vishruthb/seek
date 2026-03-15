@@ -9,6 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	os.Exit(run())
 }
@@ -21,6 +27,7 @@ func run() int {
 		formatOverride  string
 		resultsOverride int
 		printConfig     bool
+		printVersion    bool
 	)
 
 	flag.StringVar(&backendOverride, "backend", "", "override the configured LLM backend (ollama or openai)")
@@ -29,10 +36,15 @@ func run() int {
 	flag.StringVar(&formatOverride, "format", "", "override the response format (concise, learning, explanatory, oneliner)")
 	flag.IntVar(&resultsOverride, "results", 0, "override Tavily max search results")
 	flag.BoolVar(&printConfig, "config", false, "print the config path and exit")
+	flag.BoolVar(&printVersion, "version", false, "print version information and exit")
 	flag.Parse()
 
 	if printConfig {
 		fmt.Println(ConfigPath())
+		return 0
+	}
+	if printVersion {
+		fmt.Printf("seek version %s (%s, %s)\n", version, commit, date)
 		return 0
 	}
 

@@ -120,7 +120,11 @@ func normalizeBaseURL(rawURL, defaultURL string) string {
 		return defaultURL
 	}
 	if !strings.Contains(value, "://") {
-		value = "http://" + value
+		scheme := "http"
+		if parsed, err := url.Parse(defaultURL); err == nil && parsed.Scheme != "" {
+			scheme = parsed.Scheme
+		}
+		value = scheme + "://" + value
 	}
 	return strings.TrimRight(value, "/")
 }
@@ -151,20 +155,24 @@ func readAPIError(resp *http.Response, provider string) error {
 	message := strings.TrimSpace(string(body))
 
 	var payload struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Message string `json:"message"`
-		ErrorS  string `json:"error"`
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
 	}
 	if len(body) > 0 && json.Unmarshal(body, &payload) == nil {
 		switch {
-		case strings.TrimSpace(payload.Error.Message) != "":
-			message = payload.Error.Message
 		case strings.TrimSpace(payload.Message) != "":
 			message = payload.Message
-		case strings.TrimSpace(payload.ErrorS) != "":
-			message = payload.ErrorS
+		case len(payload.Error) > 0:
+			var errObj struct {
+				Message string `json:"message"`
+			}
+			var errText string
+			switch {
+			case json.Unmarshal(payload.Error, &errObj) == nil && strings.TrimSpace(errObj.Message) != "":
+				message = errObj.Message
+			case json.Unmarshal(payload.Error, &errText) == nil && strings.TrimSpace(errText) != "":
+				message = errText
+			}
 		}
 	}
 	if message == "" {

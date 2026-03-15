@@ -62,3 +62,19 @@ func TestOllamaStreamChatReturnsHelpfulConnectionError(t *testing.T) {
 		t.Fatalf("expected helpful connection error, got %v", err)
 	}
 }
+
+func TestReadAPIErrorParsesStringErrorPayload(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"model 'foo' not found"}`)),
+	}
+
+	err := readAPIError(resp, "ollama")
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected APIError, got %T", err)
+	}
+	if apiErr.Message != "model 'foo' not found" {
+		t.Fatalf("expected string error payload to be parsed, got %q", apiErr.Message)
+	}
+}

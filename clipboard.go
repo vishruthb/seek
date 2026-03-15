@@ -61,7 +61,10 @@ func clipboardCommand() (*exec.Cmd, error) {
 
 func OpenBrowser(targetURL string, browser string) error {
 	if strings.TrimSpace(browser) != "" {
-		parts := strings.Fields(browser)
+		parts, err := splitCommandLine(browser)
+		if err != nil {
+			return err
+		}
 		if len(parts) == 0 {
 			return errors.New("browser command is empty")
 		}
@@ -79,4 +82,55 @@ func OpenBrowser(targetURL string, browser string) error {
 	default:
 		return fmt.Errorf("opening a browser is not supported on %s", runtime.GOOS)
 	}
+}
+
+func splitCommandLine(command string) ([]string, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil, nil
+	}
+
+	var (
+		args         []string
+		current      strings.Builder
+		quote        rune
+		escaped      bool
+		flushCurrent = func() {
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		}
+	)
+
+	for _, r := range command {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ' ' || r == '\t' || r == '\n':
+			flushCurrent()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	if escaped {
+		current.WriteRune('\\')
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("browser command has an unterminated quote")
+	}
+	flushCurrent()
+	return args, nil
 }

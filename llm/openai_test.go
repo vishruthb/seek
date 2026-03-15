@@ -87,3 +87,16 @@ func TestOpenAIStreamChatParsesAPIError(t *testing.T) {
 		t.Fatalf("unexpected API error: %#v", apiErr)
 	}
 }
+
+func TestNewOpenAIPreservesHTTPSForSchemeLessBaseURL(t *testing.T) {
+	client, err := NewOpenAI("test-key", "api.groq.com/openai", "test-model")
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	if client.baseURL != "https://api.groq.com/openai" {
+		t.Fatalf("expected HTTPS base URL, got %q", client.baseURL)
+	}
+	if client.httpClient.Timeout != 0 {
+		t.Fatalf("expected streaming client timeout to be disabled, got %s", client.httpClient.Timeout)
+	}
+}

@@ -47,7 +47,7 @@ func NewOpenAI(apiKey, baseURL, model string) (*OpenAI, error) {
 		apiKey:       strings.TrimSpace(apiKey),
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		model:        fallback(strings.TrimSpace(model), "llama-3.3-70b-versatile"),
-		httpClient:   &http.Client{Timeout: 90 * time.Second},
+		httpClient:   &http.Client{},
 		providerName: inferProviderName(parsed.Hostname()),
 	}, nil
 }

@@ -14,12 +14,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "seek — AI-powered web search from your terminal",
+  title: "seek - AI-powered search from your terminal",
   description:
     "Terminal search TUI with vim keybinds, follow-up chat, and pluggable LLM backends. Search the web without leaving your terminal.",
   metadataBase: new URL("https://vishruthb.github.io/seek/"),
   openGraph: {
-    title: "seek — AI search in your terminal",
+    title: "seek - AI-powered search from your terminal",
     description: "Vim keybinds. Follow-up chat. Zero context switching.",
     type: "website",
     url: "https://vishruthb.github.io/seek/",

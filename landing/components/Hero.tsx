@@ -23,35 +23,39 @@ function GitHubIcon() {
 export default function Hero() {
   return (
     <motion.div
-      className="relative flex w-full flex-col gap-10 lg:max-w-[38rem] lg:gap-14 lg:pt-3"
+      className="relative flex w-full flex-col gap-10 lg:h-full lg:max-w-[38rem] lg:justify-between lg:gap-14"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
     >
-      <div className="flex items-center justify-between gap-4">
-        <div className="font-mono text-[0.78rem] text-accent-mint">seek cli</div>
-        <a
-          href={githubURL}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="seek on github"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-subtle text-text-secondary transition-colors hover:border-accent-mint hover:text-accent-mint"
-        >
-          <GitHubIcon />
-        </a>
-      </div>
-      <div className="space-y-6">
-        <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
-          ai-powered web search, all from the comfort of your terminal.
-        </h1>
-        <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
-          fast, keyboard-first, and lightweight. use ollama when you want local
-          answer generation, or switch to groq and other openai-compatible
-          backends when you want raw speed.
-        </p>
+      <div className="space-y-10 lg:space-y-12">
+        <div className="flex items-center justify-between gap-4">
+          <div className="font-mono text-[0.92rem] tracking-[0.08em] text-accent-mint sm:text-[1rem]">
+            seek cli
+          </div>
+          <a
+            href={githubURL}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="seek on github"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-subtle text-text-secondary transition-colors hover:border-accent-mint hover:text-accent-mint"
+          >
+            <GitHubIcon />
+          </a>
+        </div>
+        <div className="space-y-6">
+          <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
+            ai-powered web search, all from the comfort of your terminal.
+          </h1>
+          <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
+            fast, keyboard-first, and lightweight. use ollama when you want local
+            answer generation, or switch to groq and other openai-compatible
+            backends when you want raw speed.
+          </p>
+        </div>
       </div>
 
-      <div className="max-w-2xl pt-2 sm:pt-4 lg:pt-6">
+      <div className="max-w-2xl pt-2 sm:pt-4 lg:mt-auto lg:pt-4">
         <div className="max-w-2xl">
           <CodeBlock code={installCommand} label="install" />
         </div>

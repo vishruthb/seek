@@ -23,13 +23,13 @@ function GitHubIcon() {
 export default function Hero() {
   return (
     <motion.div
-      className="relative flex w-full flex-col gap-10 lg:h-full lg:max-w-[38rem] lg:justify-between lg:gap-14"
+      className="relative flex min-w-0 w-full flex-col gap-10 lg:h-full lg:max-w-[38rem] lg:justify-between lg:gap-14"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
     >
       <div className="space-y-10 lg:space-y-12">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex w-full min-w-0 items-center justify-between gap-4">
           <div className="font-mono text-[0.92rem] tracking-[0.08em] text-accent-mint sm:text-[1rem]">
             seek cli
           </div>
@@ -38,7 +38,7 @@ export default function Hero() {
             target="_blank"
             rel="noreferrer"
             aria-label="seek on github"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-subtle text-text-secondary transition-colors hover:border-accent-mint hover:text-accent-mint"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-subtle text-text-primary transition-colors hover:border-accent-mint hover:text-accent-mint"
           >
             <GitHubIcon />
           </a>
@@ -48,24 +48,24 @@ export default function Hero() {
             ai-powered web search, all from the comfort of your terminal.
           </h1>
           <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
-            fast, keyboard-first, and lightweight. use ollama when you want local
-            answer generation, or switch to groq and other openai-compatible
-            backends when you want raw speed.
+            fast, keyboard-first, and lightweight. run ollama when you want the
+            answer step to stay on your machine, or switch to groq and other
+            openai-compatible backends when speed matters more.
           </p>
         </div>
       </div>
 
-      <div className="max-w-2xl pt-2 sm:pt-4 lg:mt-auto lg:pt-4">
-        <div className="max-w-2xl">
+      <div className="max-w-2xl min-w-0 pt-2 sm:pt-4 lg:mt-auto lg:pt-4">
+        <div className="max-w-2xl min-w-0">
           <CodeBlock code={installCommand} label="install" />
         </div>
       </div>
 
       <div className="section-shell rounded-[1.3rem] border border-border-subtle bg-bg-terminal/80 p-5 lg:hidden">
-        <div className="font-mono text-sm text-accent-mint">desktop interactive demo</div>
+        <div className="font-mono text-sm text-accent-mint">quick start</div>
         <p className="mt-3 text-sm leading-7 text-text-secondary">
-          the live terminal demo shows up on wider screens. on a phone, install
-          seek and try it in your own terminal.
+          install seek, run <span className="font-mono text-accent-lime">seek --setup</span>,
+          and ask from your terminal without bouncing through tabs.
         </p>
       </div>
     </motion.div>

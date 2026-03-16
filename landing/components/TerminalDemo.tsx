@@ -5,6 +5,8 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "reac
 import { motion, useInView } from "framer-motion";
 
 const exampleQuery = "what is a transformer in ML?";
+const borderEase = [0.32, 0, 0.18, 1] as const;
+const focusTransition = { duration: 0.28, ease: borderEase } as const;
 
 type DemoLine = {
   key: string;
@@ -42,10 +44,10 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         node: (
           <div className="rounded-[0.85rem] border border-border-active/70 bg-accent-glow px-3 py-2 text-[0.78rem] text-text-bright">
             <div className="flex items-center gap-3">
-              <span className="font-semibold text-bg-terminal">seek</span>
-              <span className="text-text-secondary">│</span>
+              <span className="font-semibold text-text-bright">seek</span>
+              <span className="text-text-primary">│</span>
               <span className="truncate">"{exampleQuery}"</span>
-              <span className="ml-auto text-bg-terminal">[1/1]</span>
+              <span className="ml-auto text-text-bright">[1/1]</span>
             </div>
           </div>
         ),
@@ -143,12 +145,12 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
       {
         key: "status",
         node: (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-[0.85rem] border border-border-active/60 bg-accent-glow px-3 py-2 text-[0.76rem] text-bg-terminal">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-[0.85rem] border border-border-active/50 bg-bg-tertiary/85 px-3 py-2 text-[0.76rem] text-text-bright">
             <span>j/k scroll</span>
             <span>Tab sources</span>
             <span>f follow-up</span>
             <span>Y yank code</span>
-            <span className="ml-auto font-semibold">groq/llama-3.3-70b-versatile</span>
+            <span className="ml-auto font-semibold text-accent-mint">groq/llama-3.3-70b-versatile</span>
           </div>
         ),
       },
@@ -205,6 +207,28 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
           focused ? "border-border-active shadow-terminal" : "border-border-subtle shadow-glow"
         } bg-bg-terminal`}
       >
+        <div className="pointer-events-none absolute inset-0 rounded-[1.6rem]">
+          <motion.div
+            className="absolute inset-0 rounded-[1.6rem] border border-accent-mint"
+            animate={{
+              opacity: focused ? 0.95 : 0.18,
+              scale: focused ? 1 : 0.992,
+              boxShadow: focused
+                ? "0 0 0 1px rgba(166, 227, 161, 0.12) inset, 0 0 28px rgba(166, 227, 161, 0.16)"
+                : "0 0 0 1px rgba(166, 227, 161, 0.03) inset, 0 0 0 rgba(166, 227, 161, 0)",
+            }}
+            transition={focusTransition}
+          />
+          <motion.div
+            className="absolute inset-[1px] rounded-[1.52rem]"
+            animate={{
+              opacity: focused ? 0.12 : 0,
+              background:
+                "linear-gradient(180deg, rgba(166, 227, 161, 0.18), rgba(166, 227, 161, 0.04) 34%, rgba(166, 227, 161, 0))",
+            }}
+            transition={focusTransition}
+          />
+        </div>
         <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3 text-sm text-text-secondary">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-red-400" />
@@ -229,11 +253,13 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
           )}
         </div>
 
-        <form
+        <motion.form
           onSubmit={handleSubmit}
-          className={`border-t px-4 py-3 sm:px-6 ${
-            focused ? "border-border-active" : "border-border-subtle"
-          }`}
+          className="border-t px-4 py-3 sm:px-6"
+          animate={{
+            borderColor: focused ? "rgba(166, 227, 161, 0.85)" : "rgba(42, 42, 58, 1)",
+          }}
+          transition={focusTransition}
         >
           {toastVisible && (
             <div className="mb-3 flex items-center justify-between rounded-xl border border-border-active bg-accent-glow px-4 py-2 text-sm text-text-bright">
@@ -247,7 +273,16 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
               </button>
             </div>
           )}
-          <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-bg-secondary/95 px-3 py-3">
+          <motion.div
+            className="flex items-center gap-3 rounded-xl border bg-bg-secondary/95 px-3 py-3"
+            animate={{
+              borderColor: focused ? "rgba(166, 227, 161, 0.9)" : "rgba(42, 42, 58, 1)",
+              boxShadow: focused
+                ? "0 0 0 1px rgba(166, 227, 161, 0.18), 0 0 22px rgba(166, 227, 161, 0.08)"
+                : "0 0 0 0 rgba(166, 227, 161, 0)",
+            }}
+            transition={focusTransition}
+          >
             <span className="font-mono text-accent-mint">›</span>
             {submitting ? (
               <div className="flex flex-1 items-center gap-3 font-mono text-sm text-text-secondary">
@@ -268,8 +303,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
                 <span className="font-mono text-xs text-accent-mint">⏎</span>
               </>
             )}
-          </div>
-        </form>
+          </motion.div>
+        </motion.form>
       </motion.div>
   );
 

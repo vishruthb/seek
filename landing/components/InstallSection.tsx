@@ -32,12 +32,12 @@ export default function InstallSection() {
 
   return (
     <section id="install" className="space-y-6 scroll-mt-8">
-        <div className="px-1">
+      <div className="px-1">
         <div className="section-heading">install</div>
         <p className="section-copy mt-3">
           setup takes about two minutes. install seek, run the local setup
-          wizard, paste your keys, and start asking questions. keep the model
-          local with ollama, or point seek at a faster cloud backend.
+          wizard, paste your keys, and start asking questions. keep the answer
+          step local with ollama, or point seek at a faster cloud backend.
         </p>
       </div>
 
@@ -115,7 +115,7 @@ export default function InstallSection() {
               >
                 ollama
               </a>{" "}
-              for local answer generation.
+              for a self-hosted model pass.
             </p>
           </div>
           <div className="rounded-2xl border border-border-subtle bg-bg-secondary/90 p-5">

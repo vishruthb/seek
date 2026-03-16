@@ -75,9 +75,20 @@ input {
 }
 
 .section-shell {
+  min-width: 0;
   border: 1px solid var(--border-subtle);
   background: linear-gradient(180deg, rgba(18, 18, 26, 0.92), rgba(10, 10, 15, 0.92));
   box-shadow: 0 0 0 1px rgba(166, 227, 161, 0.05) inset;
+}
+
+.section-shell p,
+.section-shell h1,
+.section-shell h2,
+.section-shell h3,
+.section-shell a,
+.section-shell span,
+.section-shell code {
+  overflow-wrap: anywhere;
 }
 
 .section-heading {

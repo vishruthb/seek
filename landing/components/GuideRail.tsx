@@ -294,8 +294,8 @@ export default function GuideRail() {
               active === "keybindings" ? "opacity-100 blur-0" : "lg:opacity-45 lg:blur-[1.5px]"
             }`}
           >
-            <div className="border-b border-border-subtle px-6 py-4 font-mono text-xs tracking-[0.2em] text-text-secondary">
-              keybindings
+            <div className="border-b border-border-subtle px-6 py-5">
+              <div className="section-heading">keybindings</div>
             </div>
             <div className="grid gap-0 lg:grid-cols-3">
               {keyGroups.map((group, index) => (

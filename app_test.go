@@ -106,10 +106,10 @@ func TestStartupLayoutStaysCompactWithoutExtraMiddlePanel(t *testing.T) {
 	if m.sourcesH != 0 {
 		t.Fatalf("expected no middle sources/composer panel on empty startup, got %d", m.sourcesH)
 	}
-	if m.contentH != 14 {
+	if m.contentH != startupShellMaxHeight {
 		t.Fatalf("expected capped startup shell height, got %d", m.contentH)
 	}
-	expectedSplashHeight := ui.PreferredSplashHeight(m.contentW-2) + 2
+	expectedSplashHeight := ui.PreferredSplashHeight(m.contentW-2) + 3
 	if m.summaryH != expectedSplashHeight {
 		t.Fatalf("expected startup summary height %d, got %d", expectedSplashHeight, m.summaryH)
 	}
@@ -148,6 +148,32 @@ func TestStartupEscapeKeepsInputModeAndBottomAnchoredShell(t *testing.T) {
 	}
 }
 
+func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 140
+	m.height = 36
+	m.state = StateInput
+	m.followInput.SetValue("/")
+	m.applyLayout()
+
+	minSplashHeight := ui.PreferredSplashHeight(m.contentW-2) + 2
+	if m.summaryH < minSplashHeight {
+		t.Fatalf("expected slash layout to preserve splash height %d, got %d", minSplashHeight, m.summaryH)
+	}
+	if m.sourcesH != startupSlashSuggestionsHeight {
+		t.Fatalf("expected compact slash suggestions height %d, got %d", startupSlashSuggestionsHeight, m.sourcesH)
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝") {
+		t.Fatalf("expected full seek logo to remain visible, got %q", view)
+	}
+	if !strings.Contains(view, "/backend <ollama|openai>") {
+		t.Fatalf("expected slash command suggestions to remain visible, got %q", view)
+	}
+}
+
 func TestExitSlashCommandReturnsQuit(t *testing.T) {
 	cfg := DefaultConfig()
 	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
@@ -158,6 +184,14 @@ func TestExitSlashCommandReturnsQuit(t *testing.T) {
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("expected /exit to emit tea.QuitMsg")
+	}
+}
+
+func TestSanitizeTerminalTextStripsEscapeSequences(t *testing.T) {
+	value := "safe\x1b]52;c;bad\a text\x1b[31m!\x1b[0m"
+	got := sanitizeTerminalText(value)
+	if got != "safe text!" {
+		t.Fatalf("unexpected sanitized text: %q", got)
 	}
 }
 

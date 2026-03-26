@@ -27,6 +27,14 @@ var (
 	sourceTailRE = regexp.MustCompile(`(?is)\n{2,}(?:#{1,6}\s*|[*_]{0,2})?(sources?|references?|citations?|further reading)(?:[*_]{0,2})\s*:?\s*\n`)
 )
 
+const (
+	startupShellMaxHeight         = 16
+	activeShellMaxHeight          = 28
+	startupSlashSuggestionsHeight = 4
+	inputComposerHeight           = 5
+	sourcesPanelHeight            = 6
+)
+
 type (
 	slashCommandSpec struct {
 		Name        string
@@ -213,18 +221,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		results := sanitizeSearchResults(msg.Results)
 		if m.currentTurn >= 0 {
-			m.turns[m.currentTurn].Sources = sourcesFromSearchResults(msg.Results)
+			m.turns[m.currentTurn].Sources = sourcesFromSearchResults(results)
 			m.turns[m.currentTurn].Error = ""
 		}
 		m.waitingFirstToken = true
 		m.syncSources()
 		m.applyLayout()
 		m.refreshViewport(false)
-		return m, tea.Batch(m.startLLMStream(msg.Results), m.spinner.Tick)
+		return m, tea.Batch(m.startLLMStream(results), m.spinner.Tick)
 
 	case tokenMsg:
 		if msg.RequestID != m.requestID || m.currentTurn < 0 {
+			return m, nil
+		}
+		token := sanitizeTerminalText(msg.Text)
+		if token == "" {
+			if m.streamSub != nil {
+				return m, waitForMsg(m.streamSub)
+			}
 			return m, nil
 		}
 		if m.waitingFirstToken {
@@ -235,9 +251,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.streaming = true
-		m.turns[m.currentTurn].Response += msg.Text
+		m.turns[m.currentTurn].Response += token
 		m.turns[m.currentTurn].Error = ""
-		m.tokenCount += len(strings.Fields(msg.Text))
+		m.tokenCount += len(strings.Fields(token))
 		m.refreshViewport(false)
 		if m.streamSub != nil {
 			return m, waitForMsg(m.streamSub)
@@ -320,7 +336,7 @@ func (m *model) View() string {
 		parts = append(parts, m.headerView())
 	}
 	parts = append(parts, m.summaryView())
-	if !m.isPlainStartupState() {
+	if m.sourcesH > 0 && !m.isPlainStartupState() {
 		parts = append(parts, m.sourcesSectionView())
 	}
 	parts = append(parts, m.footerView())
@@ -692,9 +708,9 @@ func (m *model) applyLayout() {
 	m.contentW = max(18, m.width-2)
 	maxContentH := max(6, m.height-2)
 	if len(m.turns) == 0 {
-		m.contentH = min(maxContentH, 14)
+		m.contentH = min(maxContentH, startupShellMaxHeight)
 	} else {
-		m.contentH = min(maxContentH, 28)
+		m.contentH = min(maxContentH, activeShellMaxHeight)
 	}
 	m.summaryW = max(12, m.contentW)
 
@@ -709,14 +725,12 @@ func (m *model) applyLayout() {
 
 	sourcesH := 0
 	switch {
-	case len(m.turns) == 0:
-		if m.isSlashInput() {
-			sourcesH = 6
-		}
-	case m.state == StateInput && !m.isSlashInput():
-		sourcesH = 5
-	default:
-		sourcesH = 6
+	case len(m.turns) == 0 && m.isSlashInput():
+		sourcesH = startupSlashSuggestionsHeight
+	case len(m.turns) > 0 && m.state == StateInput && !m.isSlashInput():
+		sourcesH = inputComposerHeight
+	case len(m.turns) > 0:
+		sourcesH = sourcesPanelHeight
 	}
 
 	available := m.contentH - headerH - footerH
@@ -724,18 +738,25 @@ func (m *model) applyLayout() {
 	if len(m.turns) == 0 {
 		minSummary = 3
 	}
-	if sourcesH > 0 && available-sourcesH < minSummary {
-		sourcesH = max(3, available-minSummary)
+
+	startupPreferredSummary := ui.PreferredSplashHeight(max(12, m.contentW-2)) + 2
+	if len(m.turns) == 0 && sourcesH > 0 && available-sourcesH < startupPreferredSummary {
+		sourcesH = max(0, available-startupPreferredSummary)
+	}
+	if len(m.turns) > 0 && sourcesH > 0 && available-sourcesH < minSummary {
+		sourcesH = max(0, available-minSummary)
+	}
+	if sourcesH > 0 && sourcesH < 3 {
+		sourcesH = 0
 	}
 	if sourcesH > 0 {
-		m.sourcesH = max(3, sourcesH)
+		m.sourcesH = sourcesH
 	} else {
 		m.sourcesH = 0
 	}
 	m.summaryH = max(3, available-m.sourcesH)
 	if m.isPlainStartupState() {
-		preferred := ui.PreferredSplashHeight(max(12, m.contentW-2)) + 2
-		m.summaryH = min(max(3, available), preferred)
+		m.summaryH = min(max(3, available), startupPreferredSummary+1)
 	}
 
 	m.viewport.Width = max(8, m.summaryW-m.styles.SummaryPanel.GetHorizontalFrameSize())
@@ -1093,16 +1114,20 @@ func friendlyError(err error, cfg Config) string {
 		return ""
 	}
 
+	safe := func(text string) string {
+		return strings.TrimSpace(sanitizeTerminalText(text))
+	}
+
 	var searchErr *searchpkg.APIError
 	if errors.As(err, &searchErr) {
 		switch searchErr.StatusCode {
 		case 401, 403:
-			return fmt.Sprintf("Tavily rejected the API key. Update tavily_api_key in %s or TAVILY_API_KEY. Get one at https://tavily.com", ConfigPath())
+			return safe(fmt.Sprintf("Tavily rejected the API key. Update tavily_api_key in %s or TAVILY_API_KEY. Get one at https://tavily.com", ConfigPath()))
 		case 429:
 			if searchErr.RetryAfter > 0 {
-				return fmt.Sprintf("Tavily rate limited the request. Retry in %s.", searchErr.RetryAfter.Round(time.Second))
+				return safe(fmt.Sprintf("Tavily rate limited the request. Retry in %s.", searchErr.RetryAfter.Round(time.Second)))
 			}
-			return "Tavily rate limited the request. Press `r` to retry."
+			return safe("Tavily rate limited the request. Press `r` to retry.")
 		}
 	}
 
@@ -1111,30 +1136,30 @@ func friendlyError(err error, cfg Config) string {
 		switch llmErr.StatusCode {
 		case 401, 403:
 			if llmErr.Provider == "ollama" {
-				return llmErr.Message
+				return safe(llmErr.Message)
 			}
-			return fmt.Sprintf("%s rejected the API key. Set openai_api_key in %s or OPENAI_API_KEY.", llmErr.Provider, ConfigPath())
+			return safe(fmt.Sprintf("%s rejected the API key. Set openai_api_key in %s or OPENAI_API_KEY.", llmErr.Provider, ConfigPath()))
 		case 429:
 			if llmErr.RetryAfter > 0 {
-				return fmt.Sprintf("%s rate limited the request. Retry in %s.", llmErr.Provider, llmErr.RetryAfter.Round(time.Second))
+				return safe(fmt.Sprintf("%s rate limited the request. Retry in %s.", llmErr.Provider, llmErr.RetryAfter.Round(time.Second)))
 			}
-			return fmt.Sprintf("%s rate limited the request. Press `r` to retry.", llmErr.Provider)
+			return safe(fmt.Sprintf("%s rate limited the request. Press `r` to retry.", llmErr.Provider))
 		}
 	}
 
 	msg := err.Error()
 	switch {
 	case strings.Contains(strings.ToLower(msg), "tavily api key is missing"):
-		return fmt.Sprintf("Tavily API key is missing. Set tavily_api_key in %s or TAVILY_API_KEY. Get one at https://tavily.com", ConfigPath())
+		return safe(fmt.Sprintf("Tavily API key is missing. Set tavily_api_key in %s or TAVILY_API_KEY. Get one at https://tavily.com", ConfigPath()))
 	case strings.HasPrefix(msg, "No API key set for"):
-		return msg
+		return safe(msg)
 	case strings.HasPrefix(msg, "Cannot connect to Ollama"):
 		if strings.TrimSpace(cfg.OpenAIAPIKey) != "" {
-			return msg + ". You can also switch to `--backend openai`."
+			return safe(msg + ". You can also switch to `--backend openai`.")
 		}
-		return msg
+		return safe(msg)
 	default:
-		return msg
+		return safe(msg)
 	}
 }
 
@@ -1547,25 +1572,28 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 func (m *model) renderSlashSuggestions() string {
 	matches := m.filteredSlashCommands(strings.TrimSpace(m.followInput.Value()))
 	innerWidth := max(0, m.contentW-4)
+	visibleRows := max(1, m.sourcesH-2)
 
 	lines := []string{m.styles.HorizontalRule(innerWidth, "Commands")}
 	if len(matches) == 0 {
 		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("No command matches"))
 	} else {
-		limit := min(5, len(matches))
+		limit := min(5, min(len(matches), max(1, visibleRows-1)))
 		for i := 0; i < limit; i++ {
 			cmd := matches[i]
 			header := m.styles.CodeLabel.Render(cmd.Usage)
 			desc := m.styles.Dimmed.Render(cmd.Description)
 			lines = append(lines, lipgloss.NewStyle().Width(innerWidth).Render(header+"  "+desc))
 		}
-		if len(matches) > limit {
+		if len(matches) > limit && len(lines) < visibleRows+1 {
 			lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render(fmt.Sprintf("+%d more", len(matches)-limit)))
 		}
-		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("Tab autocomplete · Enter run command"))
+		if len(lines) < visibleRows+1 {
+			lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("Tab autocomplete · Enter run command"))
+		}
 	}
 
-	for len(lines) < max(1, m.sourcesH-2) {
+	for len(lines) < visibleRows+1 {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
 	}
 

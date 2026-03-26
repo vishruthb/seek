@@ -60,6 +60,11 @@ func clipboardCommand() (*exec.Cmd, error) {
 }
 
 func OpenBrowser(targetURL string, browser string) error {
+	safeURL, err := validateExternalURL(targetURL)
+	if err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(browser) != "" {
 		parts, err := splitCommandLine(browser)
 		if err != nil {
@@ -68,17 +73,17 @@ func OpenBrowser(targetURL string, browser string) error {
 		if len(parts) == 0 {
 			return errors.New("browser command is empty")
 		}
-		args := append(parts[1:], targetURL)
+		args := append(parts[1:], safeURL)
 		return exec.Command(parts[0], args...).Start()
 	}
 
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", targetURL).Start()
+		return exec.Command("open", safeURL).Start()
 	case "linux":
-		return exec.Command("xdg-open", targetURL).Start()
+		return exec.Command("xdg-open", safeURL).Start()
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", safeURL).Start()
 	default:
 		return fmt.Errorf("opening a browser is not supported on %s", runtime.GOOS)
 	}

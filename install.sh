@@ -55,6 +55,33 @@ download_to() {
 	error "Missing downloader. Install curl or wget and retry."
 }
 
+sha256_file() {
+	if have_cmd sha256sum; then
+		sha256sum "$1" | awk '{print $1}'
+		return 0
+	fi
+	if have_cmd shasum; then
+		shasum -a 256 "$1" | awk '{print $1}'
+		return 0
+	fi
+	if have_cmd openssl; then
+		openssl dgst -sha256 "$1" | awk '{print $NF}'
+		return 0
+	fi
+	error "Missing checksum tool. Install sha256sum, shasum, or openssl and retry."
+}
+
+checksum_for() {
+	awk -v file="$1" '{
+		name = $2
+		sub(/^\*/, "", name)
+		if (name == file) {
+			print $1
+			exit
+		}
+	}' "$2"
+}
+
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 
@@ -88,10 +115,21 @@ info "Latest version: ${LATEST}"
 
 TARBALL="seek_${LATEST#v}_${OS}_${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${LATEST}/${TARBALL}"
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${LATEST}/checksums.txt"
 TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t seek)"
 
 info "Downloading ${URL}"
 download_to "$URL" "${TMPDIR}/${TARBALL}" || error "Download failed. Check https://github.com/${REPO}/releases."
+
+info "Downloading ${CHECKSUMS_URL}"
+download_to "$CHECKSUMS_URL" "${TMPDIR}/checksums.txt" || error "Checksum download failed. Check https://github.com/${REPO}/releases."
+
+EXPECTED_SHA="$(checksum_for "${TARBALL}" "${TMPDIR}/checksums.txt")"
+[ -n "${EXPECTED_SHA}" ] || error "Could not find a checksum for ${TARBALL}."
+
+ACTUAL_SHA="$(sha256_file "${TMPDIR}/${TARBALL}")"
+[ "${ACTUAL_SHA}" = "${EXPECTED_SHA}" ] || error "Checksum mismatch for ${TARBALL}."
+info "Verified SHA256 checksum"
 
 info "Extracting archive"
 tar -xzf "${TMPDIR}/${TARBALL}" -C "${TMPDIR}" || error "Failed to extract archive."

@@ -39,7 +39,7 @@ func NewOllama(baseURL, model string) *Ollama {
 	return &Ollama{
 		baseURL:    normalizeBaseURL(baseURL, "http://localhost:11434"),
 		model:      fallback(strings.TrimSpace(model), "llama3.1:8b"),
-		httpClient: &http.Client{},
+		httpClient: newStreamingHTTPClient(),
 	}
 }
 

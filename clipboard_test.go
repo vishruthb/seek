@@ -34,3 +34,31 @@ func TestSplitCommandLineRejectsUnterminatedQuote(t *testing.T) {
 		t.Fatalf("expected unterminated quote error")
 	}
 }
+
+func TestValidateExternalURLAllowsHTTPAndHTTPS(t *testing.T) {
+	tests := []string{
+		"https://example.com/docs?q=seek",
+		"http://127.0.0.1:8080/ui",
+	}
+
+	for _, input := range tests {
+		if _, err := validateExternalURL(input); err != nil {
+			t.Fatalf("validateExternalURL(%q): %v", input, err)
+		}
+	}
+}
+
+func TestValidateExternalURLRejectsUnsafeSchemes(t *testing.T) {
+	tests := []string{
+		"file:///etc/passwd",
+		"javascript:alert(1)",
+		"mailto:test@example.com",
+		"https://user:pass@example.com",
+	}
+
+	for _, input := range tests {
+		if _, err := validateExternalURL(input); err == nil {
+			t.Fatalf("expected %q to be rejected", input)
+		}
+	}
+}

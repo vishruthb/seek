@@ -100,3 +100,19 @@ func TestNewOpenAIPreservesHTTPSForSchemeLessBaseURL(t *testing.T) {
 		t.Fatalf("expected streaming client timeout to be disabled, got %s", client.httpClient.Timeout)
 	}
 }
+
+func TestNewOpenAIRejectsInsecureRemoteHTTPBaseURL(t *testing.T) {
+	if _, err := NewOpenAI("test-key", "http://api.groq.com/openai", "test-model"); err == nil {
+		t.Fatalf("expected insecure remote HTTP base URL to be rejected")
+	}
+}
+
+func TestNewOpenAIAllowsPrivateHTTPBaseURL(t *testing.T) {
+	client, err := NewOpenAI("test-key", "http://127.0.0.1:4000/v1", "test-model")
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	if client.baseURL != "http://127.0.0.1:4000/v1" {
+		t.Fatalf("unexpected base URL: %q", client.baseURL)
+	}
+}

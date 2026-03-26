@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -37,17 +36,16 @@ type openAIChunk struct {
 }
 
 func NewOpenAI(apiKey, baseURL, model string) (*OpenAI, error) {
-	baseURL = normalizeBaseURL(baseURL, "https://api.groq.com/openai")
-	parsed, err := url.Parse(baseURL)
+	baseURL, parsed, err := validateBaseURL(baseURL, "https://api.groq.com/openai", "openai_base_url", true)
 	if err != nil {
-		return nil, fmt.Errorf("invalid openai_base_url %q: %w", baseURL, err)
+		return nil, err
 	}
 
 	return &OpenAI{
 		apiKey:       strings.TrimSpace(apiKey),
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		model:        fallback(strings.TrimSpace(model), "llama-3.3-70b-versatile"),
-		httpClient:   &http.Client{},
+		httpClient:   newStreamingHTTPClient(),
 		providerName: inferProviderName(parsed.Hostname()),
 	}, nil
 }

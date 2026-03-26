@@ -1452,7 +1452,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return m.flash("Available: /backend /mode /model /depth /results /context /history /recent /stats /show /help /exit", "warning")
+		return m.flash("Available: /backend /mode /model /depth /results /context /history /recent /stats /clear-history /show /help /exit", "warning")
 	}
 
 	command := strings.ToLower(parts[0])
@@ -1466,7 +1466,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /context, /history, /recent, /stats, /copy, /show, /help, /exit", "success"))
+		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
 		m.setFollowInputValue("")
 		m.applyLayout()
@@ -1535,6 +1535,19 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 			return m.failSlashCommand("History stats failed: " + err.Error())
 		}
 		return m.showOverlay(historyStatsMarkdown(stats))
+	case "clear-history":
+		if len(args) != 0 {
+			return m.failSlashCommand("Usage: /clear-history")
+		}
+		if m.historyStore == nil {
+			return m.failSlashCommand("History is not available for this session")
+		}
+		deleted, err := m.historyStore.Clear()
+		if err != nil {
+			return m.failSlashCommand("Clear history failed: " + err.Error())
+		}
+		m.clearTurnHistoryIDs()
+		return m.showOverlay(historyClearMarkdown(deleted))
 	case "copy":
 		if strings.TrimSpace(m.composeTranscript()) == "" || len(m.turns) == 0 {
 			return m.failSlashCommand("Nothing to copy yet")
@@ -1661,6 +1674,12 @@ func (m *model) saveTurnToHistoryCmd(turnIndex int) tea.Cmd {
 	return func() tea.Msg {
 		id, err := store.Save(record)
 		return historySavedMsg{TurnIndex: turnIndex, ID: id, Err: err}
+	}
+}
+
+func (m *model) clearTurnHistoryIDs() {
+	for idx := range m.turns {
+		m.turns[idx].HistoryID = nil
 	}
 }
 
@@ -1909,6 +1928,7 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		{Name: "history", Usage: "/history <query>", Description: "search saved local history from previous queries"},
 		{Name: "recent", Usage: "/recent [count]", Description: "show the most recent saved searches"},
 		{Name: "stats", Usage: "/stats", Description: "show aggregate search history stats"},
+		{Name: "clear-history", Usage: "/clear-history", Description: "delete all saved local history entries"},
 		{Name: "copy", Usage: "/copy", Description: "copy the full chat history including follow-ups"},
 		{Name: "show", Usage: "/show", Description: "show the active session configuration"},
 		{Name: "help", Usage: "/help", Description: "list available slash commands"},

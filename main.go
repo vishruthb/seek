@@ -46,6 +46,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		printVersion    bool
 		showRecent      bool
 		showStats       bool
+		clearHistory    bool
 		openID          int64
 	)
 
@@ -60,6 +61,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&projectFilter, "project", "", "filter history commands to a project directory")
 	fs.BoolVar(&showRecent, "recent", false, "print recent history entries and exit")
 	fs.BoolVar(&showStats, "stats", false, "print history statistics and exit")
+	fs.BoolVar(&clearHistory, "clear-history", false, "delete all saved local history entries and exit")
 	fs.Int64Var(&openID, "open", 0, "open a saved history entry in the TUI")
 	fs.BoolVar(&printConfig, "config", false, "print the config path and exit")
 	fs.BoolVar(&runSetupWizard, "setup", false, "create or update ~/.config/seek/config.toml interactively")
@@ -101,7 +103,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	projectCtx := projectctx.DetectContext(sessionWorkingDir)
 
 	var historyStore *historypkg.HistoryStore
-	if cfg.HistoryEnabled {
+	if cfg.HistoryEnabled || clearHistory {
 		historyStore, err = historypkg.NewHistoryStore(cfg.HistoryDBPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "warning: could not open history database: %v\n", err)
@@ -112,6 +114,27 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	}
 
 	extraArgs := fs.Args()
+	if clearHistory {
+		if strings.TrimSpace(historyQuery) != "" || showRecent || showStats || openID > 0 || len(extraArgs) > 0 {
+			fmt.Fprintln(stderr, "seek: --clear-history cannot be combined with other history actions or a query")
+			return 2
+		}
+		if historyStore == nil {
+			fmt.Fprintln(stderr, "seek: history is unavailable")
+			return 1
+		}
+		deleted, err := historyStore.Clear()
+		if err != nil {
+			fmt.Fprintf(stderr, "seek: %v\n", err)
+			return 1
+		}
+		label := "entries"
+		if deleted == 1 {
+			label = "entry"
+		}
+		fmt.Fprintf(stdout, "Cleared %d history %s.\n", deleted, label)
+		return 0
+	}
 	if showRecent {
 		if historyStore == nil {
 			fmt.Fprintln(stderr, "seek: history is unavailable")

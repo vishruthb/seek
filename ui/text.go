@@ -54,3 +54,9 @@ func padRightWidth(value string, width int) string {
 	padding := max(0, width-lipgloss.Width(value))
 	return value + strings.Repeat(" ", padding)
 }
+
+func padLeftWidth(value string, width int) string {
+	value = truncateWidth(value, width)
+	padding := max(0, width-lipgloss.Width(value))
+	return strings.Repeat(" ", padding) + value
+}

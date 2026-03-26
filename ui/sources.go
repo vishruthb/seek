@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type SourceItem struct {
@@ -89,32 +91,17 @@ func (m SourcesModel) View() string {
 		end := min(len(m.items), m.offset+visibleRows)
 		for idx := m.offset; idx < end; idx++ {
 			item := m.items[idx]
-			prefix := "  "
 			style := m.styles.SourceLine
 			if idx == m.selected {
-				prefix = "› "
 				style = m.styles.SourceSelected
 			}
 
 			title := strings.TrimSpace(item.Title)
 			domain := strings.TrimSpace(item.Domain)
 			if title == "" {
-				title = domain
+				title = item.URL
 			}
-
-			label := fmt.Sprintf("%s[%d] %s", prefix, idx+1, title)
-			if domain != "" && !strings.EqualFold(title, domain) {
-				label += " — " + domain
-			}
-
-			if innerWidth <= 1 {
-				lines = append(lines, style.Width(innerWidth).MaxWidth(innerWidth).Render(truncateWidth(label, innerWidth)))
-				continue
-			}
-
-			lineWidth := max(0, innerWidth-2)
-			line := padRightWidth(label, lineWidth) + " ↗"
-			lines = append(lines, style.Width(innerWidth).MaxWidth(innerWidth).Render(line))
+			lines = append(lines, renderSourceRow(m.styles, style, innerWidth, idx == m.selected, idx+1, title, domain))
 		}
 	}
 
@@ -123,6 +110,32 @@ func (m SourcesModel) View() string {
 	}
 
 	return fitPanel(panel, m.width, m.height).Render(strings.Join(lines, "\n"))
+}
+
+func renderSourceRow(styles Styles, style lipgloss.Style, width int, selected bool, index int, title, domain string) string {
+	if width <= 0 {
+		return ""
+	}
+
+	prefix := "  "
+	if selected {
+		prefix = "› "
+	}
+
+	label := fmt.Sprintf("%s[%d] %s", prefix, index, strings.TrimSpace(title))
+	if strings.TrimSpace(domain) == "" || strings.EqualFold(strings.TrimSpace(title), strings.TrimSpace(domain)) {
+		return style.Width(width).MaxWidth(width).Render(truncateWidth(label, width))
+	}
+
+	metaWidth := min(max(12, width/3), 26)
+	if metaWidth >= width {
+		metaWidth = max(8, width/2)
+	}
+	labelWidth := max(1, width-metaWidth-1)
+	label = padRightWidth(label, labelWidth)
+	meta := styles.SourceMeta.Render(padLeftWidth(strings.TrimSpace(domain), metaWidth))
+	row := label + " " + meta
+	return style.Width(width).MaxWidth(width).Render(row)
 }
 
 func (m *SourcesModel) clamp() {

@@ -127,6 +127,18 @@ func historyStatsMarkdown(stats *historypkg.HistoryStats) string {
 	)
 }
 
+func historyClearMarkdown(deleted int64) string {
+	label := "entries"
+	if deleted == 1 {
+		label = "entry"
+	}
+	return fmt.Sprintf(
+		"## History Cleared\n\nRemoved %d saved history %s from the local database.\n",
+		deleted,
+		label,
+	)
+}
+
 func historyRecordsTable(records []historypkg.SearchRecord) string {
 	headers := []string{"ID", "When", "Stack", "Query"}
 	rows := make([][]string, 0, len(records))

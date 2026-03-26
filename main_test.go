@@ -96,6 +96,41 @@ func TestRunWithArgsStatsFlagOutputsAggregates(t *testing.T) {
 	}
 }
 
+func TestRunWithArgsClearHistoryDeletesSavedEntries(t *testing.T) {
+	prepareHistoryConfig(t)
+	store := mustCLIHistoryStore(t)
+	if _, err := store.Save(&historypkg.SearchRecord{
+		Query:      "wipe me",
+		Response:   "response",
+		ProjectDir: "/workspace/project",
+		TotalMs:    100,
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close store: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithArgs([]string{"--clear-history"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Cleared 1 history entry.") {
+		t.Fatalf("expected clear-history output, got %q", stdout.String())
+	}
+
+	store = mustCLIHistoryStore(t)
+	defer store.Close()
+	records, err := store.Recent(10, "")
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected empty history after clear, got %#v", records)
+	}
+}
+
 func TestRunWithArgsRejectsUnknownBackendOverride(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runWithArgs([]string{"--backend", "fake", "test"}, &stdout, &stderr)

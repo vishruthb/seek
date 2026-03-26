@@ -52,6 +52,7 @@ type Styles struct {
 	SourcesPanelFocus lipgloss.Style
 	SourceLine        lipgloss.Style
 	SourceSelected    lipgloss.Style
+	SourceMeta        lipgloss.Style
 	Dimmed            lipgloss.Style
 	StatusBar         lipgloss.Style
 	StatusHint        lipgloss.Style
@@ -126,6 +127,8 @@ func LoadTheme(name string) Styles {
 			Foreground(lipgloss.Color(palette.Text)).
 			Background(lipgloss.Color(palette.SourceSel)).
 			Bold(true),
+		SourceMeta: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(palette.Dim)),
 		Dimmed: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Dim)),
 		StatusBar: lipgloss.NewStyle().

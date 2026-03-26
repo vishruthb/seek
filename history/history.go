@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,11 +234,13 @@ func (h *HistoryStore) Stats() (*HistoryStats, error) {
 	}
 
 	stats := &HistoryStats{}
+	var avgTotalMs float64
 	if err := h.db.QueryRow(`
 		SELECT COUNT(*), COUNT(DISTINCT project_dir), COALESCE(AVG(total_ms), 0)
-		FROM searches`).Scan(&stats.TotalSearches, &stats.UniqueProjects, &stats.AvgTotalMs); err != nil {
+		FROM searches`).Scan(&stats.TotalSearches, &stats.UniqueProjects, &avgTotalMs); err != nil {
 		return nil, fmt.Errorf("query history stats: %w", err)
 	}
+	stats.AvgTotalMs = int64(math.Round(avgTotalMs))
 
 	var mostDir sql.NullString
 	if err := h.db.QueryRow(`
@@ -254,6 +257,36 @@ func (h *HistoryStore) Stats() (*HistoryStats, error) {
 	}
 
 	return stats, nil
+}
+
+func (h *HistoryStore) Clear() (int64, error) {
+	if h == nil || h.db == nil {
+		return 0, errors.New("history store is not initialized")
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin clear history: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`DELETE FROM searches`)
+	if err != nil {
+		return 0, fmt.Errorf("delete history rows: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read deleted history rows: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM sqlite_sequence WHERE name = 'searches'`); err != nil {
+		return 0, fmt.Errorf("reset history sequence: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit clear history: %w", err)
+	}
+	return deleted, nil
 }
 
 func (h *HistoryStore) Delete(id int64) error {

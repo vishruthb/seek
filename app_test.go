@@ -335,6 +335,53 @@ func TestHistorySlashCommandsRenderSavedEntries(t *testing.T) {
 	}
 }
 
+func TestClearHistorySlashCommandDeletesSavedEntriesAndResetsSessionLinks(t *testing.T) {
+	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("NewHistoryStore: %v", err)
+	}
+	defer store.Close()
+
+	id, err := store.Save(&historypkg.SearchRecord{
+		Query:        "tcp handshake",
+		Response:     "A TCP handshake uses SYN, SYN-ACK, ACK.",
+		ProjectDir:   "/workspace/project",
+		ProjectStack: "go/chi",
+		LLMBackend:   "fake/model",
+		OutputFormat: "concise",
+		TotalMs:      250,
+	})
+	if err != nil {
+		t.Fatalf("Save history: %v", err)
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		HistoryStore: store,
+	})
+	m.turns = []Turn{{Query: "tcp handshake", Response: "response", HistoryID: &id}}
+	m.currentTurn = 0
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/clear-history")
+	if !strings.Contains(m.overlayContent, "History Cleared") {
+		t.Fatalf("expected clear history overlay, got %q", m.overlayContent)
+	}
+	if m.turns[0].HistoryID != nil {
+		t.Fatalf("expected turn history IDs to be reset after clear")
+	}
+
+	records, err := store.Recent(10, "")
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected cleared history, got %#v", records)
+	}
+}
+
 func TestTimingClearsFromStatusMetaAfterTick(t *testing.T) {
 	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
 		ProjectContext: &projectctx.ProjectContext{Language: "go", Framework: "chi"},

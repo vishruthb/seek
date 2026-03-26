@@ -222,6 +222,47 @@ func TestDeleteRemovesFromMainTableAndFTS(t *testing.T) {
 	}
 }
 
+func TestClearRemovesAllRowsAndSearchIndex(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	for _, query := range []string{"tcp handshake", "udp performance", "http3"} {
+		mustSave(t, store, sampleRecord(query))
+	}
+
+	deleted, err := store.Clear()
+	if err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if deleted != 3 {
+		t.Fatalf("expected 3 deleted records, got %d", deleted)
+	}
+
+	recent, err := store.Recent(10, "")
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(recent) != 0 {
+		t.Fatalf("expected no recent records after clear, got %#v", recent)
+	}
+
+	results, err := store.Search("tcp", 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected no search results after clear, got %#v", results)
+	}
+
+	stats, err := store.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalSearches != 0 || stats.UniqueProjects != 0 || stats.AvgTotalMs != 0 {
+		t.Fatalf("expected empty stats after clear, got %#v", stats)
+	}
+}
+
 func TestStatsReturnsCorrectAggregates(t *testing.T) {
 	store := newTestStore(t)
 	defer store.Close()
@@ -253,6 +294,25 @@ func TestStatsReturnsCorrectAggregates(t *testing.T) {
 	}
 	if stats.MostSearchedDir != "/b" {
 		t.Fatalf("expected most searched dir /b, got %q", stats.MostSearchedDir)
+	}
+}
+
+func TestStatsRoundsFractionalAverageLatency(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	for _, totalMs := range []int64{6377, 6378} {
+		record := sampleRecord("fractional avg")
+		record.TotalMs = totalMs
+		mustSave(t, store, record)
+	}
+
+	stats, err := store.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.AvgTotalMs != 6378 {
+		t.Fatalf("expected rounded avg total ms 6378, got %d", stats.AvgTotalMs)
 	}
 }
 

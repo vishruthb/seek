@@ -11,12 +11,14 @@ AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight
 
 `seek` is for the moment when you're coding, need a grounded answer, and don't want to leave the terminal. It uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question.
 
+It also detects the project stack from your current working directory, keeps a local SQLite search history, and shows per-query search/LLM latency directly in the TUI.
+
 ![seek demo](assets/seek_demo.png)
 
 ## Install
 
 ```bash
-curl -fsSL https://vishruthb.github.io/seek/install.sh | sh
+curl -fsSL https://seekcli.vercel.app/install.sh | sh
 ```
 
 That installs the binary to `~/.local/bin/seek`.
@@ -91,6 +93,40 @@ seek
 
 When launched with plain `seek`, the input window opens immediately.
 
+If `seek` detects a project manifest in your current directory or one of its parents, it tailors searches and answers to that stack automatically:
+
+```bash
+cd ~/work/my-chi-api
+seek "how to add middleware"
+```
+
+That query is enriched with the detected stack, so Seek prefers Go/Chi results over generic framework docs.
+
+### Local file attachments
+
+You can attach local files directly from the follow-up input with `@[...]`.
+
+```text
+explain @[app.go]
+compare @[internal/server.go] and @[internal/router.go]
+```
+
+As soon as you type `@[`, Seek suggests files from the current working directory. Use `↑` / `↓` to select, then `Enter` or `Tab` to insert the file path. Attached files are read locally and injected into the LLM context for that query.
+
+### History and reopening saved searches
+
+Every completed answer is saved to `~/.config/seek/history.db` by default.
+
+```bash
+seek --history "tcp handshake"
+seek --recent
+seek --recent 20 --project .
+seek --stats
+seek --open 42
+```
+
+Use `seek --open <id>` to reopen a saved result in the full TUI and continue with follow-up searches from there.
+
 ### In-session slash commands
 
 Use `/` in the input bar to reconfigure the current session without restarting:
@@ -104,11 +140,20 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 /model llama-3.3-70b-versatile
 /depth advanced
 /results 8
+/context
+/context off
+/history tcp
+/recent
+/stats
 /copy
 /show
 /help
 /exit
 ```
+
+`/context` shows the detected stack for the current session. `/context off` disables stack-aware query enrichment until you turn it back on with `/context on`.
+
+When the slash-command picker is open, use `↑` / `↓` to move through commands. After you move once with the arrows, `j` / `k` will keep moving the selection. `Enter` accepts the currently selected command if the slash input is only partially typed.
 
 ## Core keys
 

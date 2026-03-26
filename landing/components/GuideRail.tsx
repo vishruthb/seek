@@ -6,68 +6,68 @@ const sections = [
   {
     id: "features",
     title: "features",
-    summary: "fast search, local or cloud backends, and keyboard-first reading.",
+    summary: "project context, local files, local history, and keyboard-first reading.",
   },
   {
     id: "how-it-works",
     title: "how it works",
-    summary: "search first, synthesis second. tavily gathers context, your llm answers.",
+    summary: "repo context first, web context second, then your llm answers against both.",
   },
   {
     id: "keybindings",
     title: "keybindings",
-    summary: "built for people who already live in vim, less, fzf, and lazygit.",
+    summary: "picker navigation, slash commands, sources, and follow-ups from the keyboard.",
   },
 ] as const;
 
 const featureItems = [
   {
-    icon: "»",
-    title: "search without switching",
-    text: "fast web search from your terminal. results stream in real time with markdown rendering.",
+    icon: "ctx",
+    title: "project-aware by default",
+    text: "seek detects the language and framework in the repo you launched it from, then biases search and answers toward that stack.",
+  },
+  {
+    icon: "@[ ]",
+    title: "attach local files inline",
+    text: "type @[file] in the input to attach local code context. seek suggests files in the current project as you type.",
+  },
+  {
+    icon: "db",
+    title: "history that reopens cleanly",
+    text: "every completed search is saved locally. search it, reopen it in the tui, and continue from the original project directory.",
+  },
+  {
+    icon: "ms",
+    title: "visible latency",
+    text: "the status bar shows total response time plus the split between Tavily search time and the llm stream.",
   },
   {
     icon: "jk",
-    title: "vim keybinds",
-    text: "j/k to scroll, tab to switch panels, / to search within results, y to yank.",
-  },
-  {
-    icon: "f>",
-    title: "follow-up chat",
-    text: "press f to ask follow-ups. context stays in the same session.",
+    title: "picker-first controls",
+    text: "arrow keys work everywhere they should, j/k can drive suggestion lists, and Enter accepts the current slash or file suggestion.",
   },
   {
     icon: "llm",
-    title: "pluggable backends",
-    text: "keep inference on your own machine with ollama, or switch to groq, openrouter, and together for cloud speed.",
-  },
-  {
-    icon: "Y",
-    title: "yank code blocks",
-    text: "press Y to copy a fenced code block. multiple blocks can be selected by number.",
-  },
-  {
-    icon: "/",
-    title: "configurable modes",
-    text: "switch between concise, learning, explanatory, and oneliner with /mode.",
+    title: "local or hosted backends",
+    text: "keep the answer step local with Ollama or route through a fast OpenAI-compatible provider when you care more about throughput.",
   },
 ];
 
 const howSteps = [
   {
     label: "01",
-    title: 'seek "your question"',
-    body: "you stay in the terminal and ask the question the moment it appears.",
+    title: 'seek "review @[server.go]"',
+    body: "you ask from the repo you are already in, and seek can pull both project context and local file context into the same request.",
   },
   {
     label: "02",
-    title: "tavily searches the web",
-    body: "fresh pages, extracted content, and citations are gathered quickly.",
+    title: "repo context + tavily search",
+    body: "seek biases the search toward your stack, gathers fresh pages, and keeps the sources separate from the answer pane.",
   },
   {
     label: "03",
-    title: "your llm synthesizes",
-    body: "your selected model reads the search context and answers with citations, whether that's ollama locally or a fast hosted backend.",
+    title: "your llm streams the answer",
+    body: "the chosen backend reads the search results and attached files, then streams a cited answer while seek tracks timings and saves the session locally.",
   },
 ];
 
@@ -88,6 +88,9 @@ const keyGroups = [
       ["f", "open follow-up input"],
       ["/", "search within the answer"],
       ["y / Y", "copy answer or code block"],
+      ["@[file]", "attach local file context"],
+      ["/history", "search local history"],
+      ["/context", "inspect or toggle detected stack"],
     ],
   },
   {
@@ -183,8 +186,9 @@ export default function GuideRail() {
         <div className="max-w-2xl px-1 lg:hidden">
           <div className="section-heading">inside seek</div>
           <p className="section-copy mt-3">
-            one flow, three parts: what seek gives you, how the search stack works,
-            and the keys that keep it fast once your hands are already on the keyboard.
+            one flow, three parts: what seek adds around the search, how the
+            stack-aware pipeline works, and the keys that keep it fast once your
+            hands are already on the keyboard.
           </p>
         </div>
 
@@ -221,8 +225,9 @@ export default function GuideRail() {
             <div className="max-w-2xl">
               <div className="section-heading">features</div>
               <p className="section-copy mt-3">
-                it's built for the moment you need an answer now, not after a browser
-                detour. one binary, one terminal, one flow.
+                seek is built to cut context drift: project-aware search, inline
+                attachments, searchable local history, and enough interface
+                polish to stay in the terminal.
               </p>
             </div>
             <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -259,10 +264,9 @@ export default function GuideRail() {
             <div className="max-w-2xl">
               <div className="section-heading">how it works</div>
               <p className="section-copy mt-3">
-                seek separates search from synthesis. tavily fetches the web results,
-                then your llm reads them and writes the answer. pair tavily with
-                ollama for a local pass, or swap in groq when you want faster hosted
-                responses.
+                seek separates retrieval from synthesis. it detects the repo you
+                are in, gathers live web results, then lets your chosen model
+                answer against both the search results and any attached local files.
               </p>
             </div>
             <div className="mt-8 flex flex-col gap-5 xl:flex-row xl:items-stretch">

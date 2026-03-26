@@ -14,15 +14,15 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "seek - AI-powered search from your terminal",
+  title: "seek - project-aware search from your terminal",
   description:
-    "Terminal search TUI with vim keybinds, follow-up chat, and pluggable LLM backends. Search the web without leaving your terminal.",
-  metadataBase: new URL("https://vishruthb.github.io/seek/"),
+    "Terminal search TUI with project context detection, local file attachments, saved history, latency metrics, and pluggable LLM backends.",
+  metadataBase: new URL("https://seekcli.vercel.app/"),
   openGraph: {
-    title: "seek - AI-powered search from your terminal",
-    description: "Vim keybinds. Follow-up chat. Zero context switching.",
+    title: "seek - project-aware search from your terminal",
+    description: "Project context. @[file] attachments. Local history. Zero browser tab drift.",
     type: "website",
-    url: "https://vishruthb.github.io/seek/",
+    url: "https://seekcli.vercel.app/",
     images: ["/og-image.png"],
   },
   twitter: {

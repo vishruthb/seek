@@ -37,14 +37,23 @@ type Source struct {
 }
 
 type Turn struct {
-	Query      string
-	Response   string
-	Sources    []Source
-	IsFollowUp bool
-	Error      string
+	Query         string
+	SearchQuery   string
+	Response      string
+	Sources       []Source
+	AttachedFiles []AttachedFile
+	IsFollowUp    bool
+	Error         string
+	HistoryID     *int64
 }
 
 type CodeBlock struct {
 	Language string
 	Content  string
+}
+
+type SearchTiming struct {
+	SearchMs int64
+	LLMMs    int64
+	TotalMs  int64
 }

@@ -35,6 +35,8 @@ max_turns = 4
 	t.Setenv("OPENAI_API_KEY", "env-openai")
 	t.Setenv("SEEK_OPENAI_MODEL", "env-model")
 	t.Setenv("SEEK_FORMAT", "oneliner")
+	t.Setenv("SEEK_HISTORY_DB_PATH", filepath.Join(home, "custom-history.db"))
+	t.Setenv("SEEK_HISTORY_ENABLED", "false")
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -58,6 +60,12 @@ max_turns = 4
 	}
 	if cfg.Theme != "light" || cfg.MaxTurns != 4 {
 		t.Fatalf("expected config file values to remain, got theme=%q max_turns=%d", cfg.Theme, cfg.MaxTurns)
+	}
+	if cfg.HistoryEnabled {
+		t.Fatalf("expected history to be disabled by env override")
+	}
+	if cfg.HistoryDBPath != filepath.Join(home, "custom-history.db") {
+		t.Fatalf("expected history db path override, got %q", cfg.HistoryDBPath)
 	}
 }
 

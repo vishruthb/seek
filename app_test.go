@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
+	projectctx "seek/context"
+	historypkg "seek/history"
 	llmpkg "seek/llm"
 	searchpkg "seek/search"
 	"seek/ui"
@@ -129,6 +134,17 @@ func TestStartupLayoutStaysCompactWithoutExtraMiddlePanel(t *testing.T) {
 	}
 }
 
+func TestStartupViewFitsNarrowWindow(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 18
+	m.height = 12
+	m.state = StateInput
+	m.applyLayout()
+
+	assertViewFits(t, m.View(), m.width)
+}
+
 func TestStartupEscapeKeepsInputModeAndBottomAnchoredShell(t *testing.T) {
 	cfg := DefaultConfig()
 	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
@@ -161,8 +177,8 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	if m.summaryH < minSplashHeight {
 		t.Fatalf("expected slash layout to preserve splash height %d, got %d", minSplashHeight, m.summaryH)
 	}
-	if m.sourcesH != startupSlashSuggestionsHeight {
-		t.Fatalf("expected compact slash suggestions height %d, got %d", startupSlashSuggestionsHeight, m.sourcesH)
+	if m.sourcesH != startupSuggestionPanelHeight {
+		t.Fatalf("expected startup suggestions height %d, got %d", startupSuggestionPanelHeight, m.sourcesH)
 	}
 
 	view := m.View()
@@ -171,6 +187,53 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	}
 	if !strings.Contains(view, "/backend <ollama|openai>") {
 		t.Fatalf("expected slash command suggestions to remain visible, got %q", view)
+	}
+}
+
+func TestSlashSuggestionsNavigateAndAcceptSelection(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 140
+	m.height = 36
+	m.state = StateInput
+	m.setFollowInputValue("/")
+	m.applyLayout()
+
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyDown})
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.inputSuggestionIndex != 2 {
+		t.Fatalf("expected j to move the focused suggestion, got %d", m.inputSuggestionIndex)
+	}
+
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.followInput.Value(); got != "/format " {
+		t.Fatalf("expected enter to accept selected slash suggestion, got %q", got)
+	}
+}
+
+func TestAttachmentSuggestionsInsertSelectedFile(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "alpha.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write alpha.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "beta.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write beta.go: %v", err)
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		WorkingDir: projectDir,
+	})
+	m.width = 140
+	m.height = 36
+	m.state = StateInput
+	m.setFollowInputValue("review @[")
+	m.applyLayout()
+
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyDown})
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if got := m.followInput.Value(); got != "review @[beta.go] " {
+		t.Fatalf("expected file suggestion to be inserted, got %q", got)
 	}
 }
 
@@ -192,6 +255,145 @@ func TestSanitizeTerminalTextStripsEscapeSequences(t *testing.T) {
 	got := sanitizeTerminalText(value)
 	if got != "safe text!" {
 		t.Fatalf("unexpected sanitized text: %q", got)
+	}
+}
+
+func TestContextSlashCommandShowsAndTogglesProjectContext(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte("module example.com/test\nrequire github.com/go-chi/chi/v5 v5.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	projectContext := projectctx.DetectContext(projectDir)
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		ProjectContext: projectContext,
+		WorkingDir:     projectDir,
+	})
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/context")
+	if !strings.Contains(m.overlayContent, "Go project using chi") {
+		t.Fatalf("expected context overlay, got %q", m.overlayContent)
+	}
+
+	_ = m.executeSlashCommand("/context off")
+	if m.projectContext != nil {
+		t.Fatalf("expected project context to be disabled")
+	}
+	if !strings.Contains(strings.ToLower(m.overlayContent), "disabled") {
+		t.Fatalf("expected disabled context overlay, got %q", m.overlayContent)
+	}
+
+	_ = m.executeSlashCommand("/context on")
+	if m.projectContext == nil || m.projectContext.Framework != "chi" {
+		t.Fatalf("expected project context to re-enable, got %#v", m.projectContext)
+	}
+}
+
+func TestHistorySlashCommandsRenderSavedEntries(t *testing.T) {
+	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("NewHistoryStore: %v", err)
+	}
+	defer store.Close()
+
+	_, err = store.Save(&historypkg.SearchRecord{
+		Query:        "tcp handshake",
+		Response:     "A TCP handshake uses SYN, SYN-ACK, ACK.",
+		ProjectDir:   "/workspace/project",
+		ProjectStack: "go/chi",
+		LLMBackend:   "fake/model",
+		OutputFormat: "concise",
+		TotalMs:      250,
+	})
+	if err != nil {
+		t.Fatalf("Save history: %v", err)
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		HistoryStore: store,
+	})
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/history tcp")
+	if !strings.Contains(m.overlayContent, "tcp handshake") || !strings.Contains(m.overlayContent, "seek --open <id>") {
+		t.Fatalf("expected history overlay, got %q", m.overlayContent)
+	}
+
+	_ = m.executeSlashCommand("/recent")
+	if !strings.Contains(m.overlayContent, "Recent Searches") {
+		t.Fatalf("expected recent overlay, got %q", m.overlayContent)
+	}
+}
+
+func TestTimingClearsFromStatusMetaAfterTick(t *testing.T) {
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		ProjectContext: &projectctx.ProjectContext{Language: "go", Framework: "chi"},
+	})
+	m.lastTiming = SearchTiming{SearchMs: 312, LLMMs: 535, TotalMs: 847}
+	m.timingVisible = true
+	m.timingSeq = 1
+
+	if got := m.statusMeta(); !strings.Contains(got, "847ms") || !strings.Contains(got, "go/chi") {
+		t.Fatalf("expected timing-rich status meta, got %q", got)
+	}
+
+	if _, cmd := m.Update(timingClearMsg{Seq: 1}); cmd != nil {
+		t.Fatalf("expected no follow-up cmd from timing clear")
+	}
+	if got := m.statusMeta(); strings.Contains(got, "847ms") || !strings.Contains(got, "fake/model") {
+		t.Fatalf("expected timing to clear from status meta, got %q", got)
+	}
+}
+
+func TestQueryLifecycleIncludesAttachedFileContext(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "app.go"), []byte("package main\n\nfunc handler() {}\n"), 0o644); err != nil {
+		t.Fatalf("write app.go: %v", err)
+	}
+
+	searchProvider := &fakeSearchProvider{
+		results: map[string][]searchpkg.SearchResult{
+			"explain app.go": {
+				{Title: "Go handler", URL: "https://example.com/handler", Content: "Handlers respond to requests.", Score: 0.9},
+			},
+		},
+	}
+	llmProvider := &fakeLLMProvider{
+		name: "fake/model",
+		responses: map[string]string{
+			"explain @[app.go]": "This defines a handler [1].",
+		},
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", searchProvider, llmProvider, ModelOptions{
+		WorkingDir: projectDir,
+	})
+	m.width = 120
+	m.height = 40
+	m.applyLayout()
+
+	driveQueryCycle(t, m, "explain @[app.go]", false)
+
+	if len(searchProvider.calls) != 1 || searchProvider.calls[0].Query != "explain app.go" {
+		t.Fatalf("expected attachment tokens to be stripped from search query, got %#v", searchProvider.calls)
+	}
+	if len(llmProvider.calls) != 1 {
+		t.Fatalf("expected one LLM call, got %d", len(llmProvider.calls))
+	}
+
+	last := llmProvider.calls[0][len(llmProvider.calls[0])-1].Content
+	if !strings.Contains(last, "Local file context:") || !strings.Contains(last, "[FILE 1] app.go") || !strings.Contains(last, "func handler() {}") {
+		t.Fatalf("expected attached file contents in prompt, got %q", last)
 	}
 }
 
@@ -270,6 +472,35 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	}
 }
 
+func TestActiveViewFitsNarrowWindowWithLongSources(t *testing.T) {
+	searchProvider := &fakeSearchProvider{
+		results: map[string][]searchpkg.SearchResult{
+			"what is a transformer": {
+				{
+					Title:   "An extremely long source title that would previously blow past the right edge of the shell",
+					URL:     "https://example.com/really/long/source/title",
+					Content: "Transformers use self-attention.",
+					Score:   0.9,
+				},
+			},
+		},
+	}
+	llmProvider := &fakeLLMProvider{
+		name: "fake/model/with/a/very/long/name",
+		responses: map[string]string{
+			"what is a transformer": "A transformer is a sequence model built around self-attention [1].",
+		},
+	}
+
+	m := NewModel(DefaultConfig(), "", searchProvider, llmProvider)
+	m.width = 42
+	m.height = 16
+	m.applyLayout()
+
+	driveQueryCycle(t, m, "what is a transformer", false)
+	assertViewFits(t, m.View(), m.width)
+}
+
 func driveQueryCycle(t *testing.T, m *model, query string, followUp bool) {
 	t.Helper()
 
@@ -314,4 +545,14 @@ func extractQuestion(payload string) string {
 		return strings.TrimSpace(payload)
 	}
 	return strings.TrimSpace(payload[idx+len(marker):])
+}
+
+func assertViewFits(t *testing.T, view string, width int) {
+	t.Helper()
+
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > width {
+			t.Fatalf("expected line width <= %d, got %d in %q", width, lipgloss.Width(line), line)
+		}
+	}
 }

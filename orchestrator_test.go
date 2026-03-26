@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	projectctx "seek/context"
 	llmpkg "seek/llm"
 	searchpkg "seek/search"
 )
@@ -18,7 +20,7 @@ func TestBuildMessagesIncludesHistorySearchContextAndFormat(t *testing.T) {
 		{Title: "PyTorch Transformer Tutorial", URL: "https://example.com/tutorial", Content: "PyTorch includes nn.Transformer."},
 	}
 
-	messages := buildMessages("show me a code example", results, history, "learning")
+	messages := buildMessages("show me a code example", results, history, nil, "learning", nil)
 	if len(messages) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(messages))
 	}
@@ -40,6 +42,78 @@ func TestBuildMessagesIncludesHistorySearchContextAndFormat(t *testing.T) {
 	}
 	if !strings.Contains(last.Content, "Question: show me a code example") {
 		t.Fatalf("expected question in final user message, got %q", last.Content)
+	}
+}
+
+func TestSearchEnrichesQueryWithProjectContext(t *testing.T) {
+	searchProvider := &fakeSearchProvider{results: map[string][]searchpkg.SearchResult{}}
+	orchestrator := NewOrchestrator(
+		searchProvider,
+		&fakeLLMProvider{name: "fake/model"},
+		5,
+		"concise",
+		&projectctx.ProjectContext{Language: "go", Framework: "chi"},
+	)
+
+	if _, err := orchestrator.Search(context.Background(), "add middleware"); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(searchProvider.calls) != 1 {
+		t.Fatalf("expected one search call, got %d", len(searchProvider.calls))
+	}
+	if !strings.Contains(searchProvider.calls[0].Query, "add middleware") || !strings.Contains(searchProvider.calls[0].Query, "go") || !strings.Contains(searchProvider.calls[0].Query, "chi") {
+		t.Fatalf("expected enriched query, got %q", searchProvider.calls[0].Query)
+	}
+}
+
+func TestSearchLeavesQueryUnchangedWithoutProjectContext(t *testing.T) {
+	searchProvider := &fakeSearchProvider{results: map[string][]searchpkg.SearchResult{}}
+	orchestrator := NewOrchestrator(searchProvider, &fakeLLMProvider{name: "fake/model"}, 5, "concise", nil)
+
+	if _, err := orchestrator.Search(context.Background(), "add middleware"); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if got := searchProvider.calls[0].Query; got != "add middleware" {
+		t.Fatalf("expected query to remain unchanged, got %q", got)
+	}
+}
+
+func TestBuildSystemPromptIncludesProjectContext(t *testing.T) {
+	prompt := buildSystemPrompt("concise", &projectctx.ProjectContext{
+		Language:     "rust",
+		Framework:    "axum",
+		Dependencies: []string{"tokio", "serde"},
+	})
+
+	for _, want := range []string{"rust", "axum", "tokio", "serde"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
+func TestBuildMessagesIncludesAttachedFiles(t *testing.T) {
+	messages := buildMessages(
+		"review @[app.go]",
+		nil,
+		nil,
+		[]AttachedFile{{DisplayPath: "app.go", Language: "go", Content: "package main\nfunc main() {}\n"}},
+		"concise",
+		nil,
+	)
+
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if !strings.Contains(messages[1].Content, "Local file context:") || !strings.Contains(messages[1].Content, "[FILE 1] app.go") || !strings.Contains(messages[1].Content, "func main() {}") {
+		t.Fatalf("expected attached file content in user message, got %q", messages[1].Content)
+	}
+}
+
+func TestBuildSystemPromptOmitsProjectContextWhenNil(t *testing.T) {
+	prompt := buildSystemPrompt("concise", nil)
+	if strings.Contains(prompt, "working in a") || strings.Contains(prompt, "framework") {
+		t.Fatalf("expected prompt without project context, got %q", prompt)
 	}
 }
 

@@ -92,7 +92,7 @@ func RenderCodeSelection(styles Styles, width, height int, previews []CodePrevie
 
 		title := fmt.Sprintf("[%d] %s · %d lines", preview.Index+1, safeLanguage(preview.Language), preview.Lines)
 		body := styles.CodeLabel.Render(title) + "\n" + preview.Preview
-		lines = append(lines, card.Width(max(0, width-2)).Render(body))
+		lines = append(lines, fitPanelWidth(card, width).Render(body))
 	}
 
 	content := strings.Join(lines, "\n")
@@ -105,11 +105,16 @@ func RenderCodeBlock(styles Styles, width int, language, content string) string 
 	}
 
 	innerWidth := max(0, width-styles.CodeBlockFrame.GetHorizontalFrameSize())
+	if innerWidth <= 1 {
+		return fitPanelWidth(styles.CodeBlockFrame, width).Render(truncateWidth(strings.TrimRight(content, "\n"), max(1, width-styles.CodeBlockFrame.GetHorizontalFrameSize())))
+	}
+
 	body := styles.CodeBody.
 		Width(innerWidth).
 		MaxWidth(innerWidth).
 		Render(strings.TrimRight(content, "\n"))
-	label := styles.CodeBlockHeader.Render(strings.ToUpper(safeLanguage(language)))
+	labelText := truncateWidth(strings.ToUpper(safeLanguage(language)), max(1, innerWidth-2))
+	label := styles.CodeBlockHeader.Render(labelText)
 	headWidth := max(0, innerWidth-lipgloss.Width(label))
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Center,
@@ -117,8 +122,7 @@ func RenderCodeBlock(styles Styles, width int, language, content string) string 
 		styles.Dimmed.Render(strings.Repeat("─", headWidth)),
 	)
 
-	frameWidth := max(0, width)
-	return styles.CodeBlockFrame.Width(frameWidth).Render(header + "\n" + body)
+	return fitPanelWidth(styles.CodeBlockFrame, width).Render(header + "\n" + body)
 }
 
 func RenderComposer(styles Styles, width, height int, state ComposerState) string {
@@ -134,10 +138,10 @@ func RenderComposer(styles Styles, width, height int, state ComposerState) strin
 	if strings.TrimSpace(state.Draft) != "" {
 		lines = append(lines, styles.ComposerMeta.Width(innerWidth).Render("draft: "+truncate(state.Draft, innerWidth-8)))
 	}
-	lines = append(lines, styles.ComposerHint.Width(innerWidth).Render("use / for backend, mode, model, depth, results, copy"))
+	lines = append(lines, styles.ComposerHint.Width(innerWidth).Render("use / for commands or @[file] to attach local code"))
 
 	body := strings.Join(lines, "\n")
-	return styles.ComposerPanel.Width(width).Height(height).Render(body)
+	return fitPanel(styles.ComposerPanel, width, height).Render(body)
 }
 
 func safeLanguage(lang string) string {
@@ -149,7 +153,10 @@ func safeLanguage(lang string) string {
 
 func truncate(value string, width int) string {
 	value = strings.TrimSpace(value)
-	if width <= 0 || lipgloss.Width(value) <= width {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
 		return value
 	}
 	runes := []rune(value)

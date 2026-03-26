@@ -3,8 +3,6 @@ package ui
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 type SourceItem struct {
@@ -76,10 +74,15 @@ func (m SourcesModel) Selected() (SourceItem, bool) {
 }
 
 func (m SourcesModel) View() string {
-	innerWidth := max(0, m.width-4)
+	panel := m.styles.SourcesPanel
+	if m.focused {
+		panel = m.styles.SourcesPanelFocus
+	}
+
+	innerWidth := max(0, m.width-panel.GetHorizontalFrameSize())
 	lines := []string{m.styles.HorizontalRule(innerWidth, "Sources")}
 
-	visibleRows := max(1, m.height-3)
+	visibleRows := max(1, m.height-panel.GetVerticalFrameSize()-1)
 	if len(m.items) == 0 {
 		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("No sources cited"))
 	} else {
@@ -104,22 +107,22 @@ func (m SourcesModel) View() string {
 				label += " — " + domain
 			}
 
-			space := max(0, innerWidth-lipgloss.Width(label)-2)
-			line := label + strings.Repeat(" ", space) + "↗"
-			lines = append(lines, style.Width(innerWidth).Render(line))
+			if innerWidth <= 1 {
+				lines = append(lines, style.Width(innerWidth).MaxWidth(innerWidth).Render(truncateWidth(label, innerWidth)))
+				continue
+			}
+
+			lineWidth := max(0, innerWidth-2)
+			line := padRightWidth(label, lineWidth) + " ↗"
+			lines = append(lines, style.Width(innerWidth).MaxWidth(innerWidth).Render(line))
 		}
 	}
 
-	for len(lines) < max(1, m.height-2) {
+	for len(lines) < max(1, m.height-panel.GetVerticalFrameSize()) {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
 	}
 
-	panel := m.styles.SourcesPanel
-	if m.focused {
-		panel = m.styles.SourcesPanelFocus
-	}
-
-	return panel.Width(m.width).Height(m.height).Render(strings.Join(lines, "\n"))
+	return fitPanel(panel, m.width, m.height).Render(strings.Join(lines, "\n"))
 }
 
 func (m *SourcesModel) clamp() {
@@ -136,7 +139,7 @@ func (m *SourcesModel) clamp() {
 		m.selected = len(m.items) - 1
 	}
 
-	visibleRows := max(1, m.height-3)
+	visibleRows := max(1, m.height-m.styles.SourcesPanel.GetVerticalFrameSize()-1)
 	if m.selected < m.offset {
 		m.offset = m.selected
 	}

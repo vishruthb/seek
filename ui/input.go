@@ -14,7 +14,7 @@ func RenderInput(styles Styles, input textinput.Model, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	return styles.InputBar.Width(width).Render(" " + input.View())
+	return fitPanelWidth(styles.InputBar, width).Render(" " + input.View())
 }
 
 func newInput(prompt string, styles Styles) textinput.Model {

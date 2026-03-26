@@ -16,6 +16,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
+	projectctx "seek/context"
+	historypkg "seek/history"
 	llmpkg "seek/llm"
 	searchpkg "seek/search"
 	"seek/ui"
@@ -28,11 +30,12 @@ var (
 )
 
 const (
-	startupShellMaxHeight         = 16
-	activeShellMaxHeight          = 28
-	startupSlashSuggestionsHeight = 4
-	inputComposerHeight           = 5
-	sourcesPanelHeight            = 6
+	startupShellMaxHeight            = 16
+	startupInteractiveShellMaxHeight = 20
+	activeShellMaxHeight             = 28
+	startupSlashSuggestionsHeight    = 4
+	inputComposerHeight              = 5
+	sourcesPanelHeight               = 6
 )
 
 type (
@@ -73,8 +76,23 @@ type (
 	browserResultMsg struct {
 		Err error
 	}
+	historySavedMsg struct {
+		TurnIndex int
+		ID        int64
+		Err       error
+	}
+	timingClearMsg struct {
+		Seq int
+	}
 	flashClearMsg struct{}
 )
+
+type ModelOptions struct {
+	ProjectContext *projectctx.ProjectContext
+	WorkingDir     string
+	HistoryStore   *historypkg.HistoryStore
+	OpenRecord     *historypkg.SearchRecord
+}
 
 type model struct {
 	state        AppState
@@ -92,6 +110,7 @@ type model struct {
 	searchProvider searchpkg.SearchProvider
 	llmProvider    llmpkg.LLMProvider
 	orchestrator   *Orchestrator
+	historyStore   *historypkg.HistoryStore
 
 	turns       []Turn
 	currentTurn int
@@ -126,6 +145,28 @@ type model struct {
 	flashText string
 	flashKind string
 
+	workingDir              string
+	projectContext          *projectctx.ProjectContext
+	detectedProjectContext  *projectctx.ProjectContext
+	inputSuggestionMode     inputSuggestionMode
+	inputSuggestions        []inputSuggestion
+	inputSuggestionIndex    int
+	inputSuggestionOffset   int
+	inputSuggestionKey      string
+	inputSuggestionsFocused bool
+	localFiles              []string
+	localFilesLoaded        bool
+	localFilesErr           error
+	overlayContent          string
+	searchStartTime         time.Time
+	llmStartTime            time.Time
+	lastSearchMs            int64
+	lastLLMMs               int64
+	lastTotalMs             int64
+	lastTiming              SearchTiming
+	timingVisible           bool
+	timingSeq               int
+
 	requestID  int
 	requestCtx context.Context
 	streamSub  chan tea.Msg
@@ -133,6 +174,10 @@ type model struct {
 }
 
 func NewModel(cfg Config, initialQuery string, searchProvider searchpkg.SearchProvider, llmProvider llmpkg.LLMProvider) *model {
+	return NewModelWithOptions(cfg, initialQuery, searchProvider, llmProvider, ModelOptions{})
+}
+
+func NewModelWithOptions(cfg Config, initialQuery string, searchProvider searchpkg.SearchProvider, llmProvider llmpkg.LLMProvider, options ModelOptions) *model {
 	styles := ui.LoadTheme(cfg.Theme)
 
 	vp := viewport.New(0, 0)
@@ -144,28 +189,42 @@ func NewModel(cfg Config, initialQuery string, searchProvider searchpkg.SearchPr
 	spin.Style = styles.Spinner
 
 	follow := ui.NewFollowUpInput(styles)
-	follow.Placeholder = "start typing... use / for commands"
+	follow.Placeholder = "start typing... use / for commands or @[file]"
 	searchInput := ui.NewSearchInput(styles)
 	searchInput.Placeholder = "search within the summary"
 
-	return &model{
-		state:          StateViewing,
-		startupQuery:   strings.TrimSpace(initialQuery),
-		viewport:       vp,
-		sourcesList:    ui.NewSources(styles),
-		followInput:    follow,
-		searchInput:    searchInput,
-		spinner:        spin,
-		statusBar:      ui.NewStatusBar(styles),
-		styles:         styles,
-		searchProvider: searchProvider,
-		llmProvider:    llmProvider,
-		orchestrator:   NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat),
-		config:         cfg,
-		autoScroll:     true,
-		printOnExit:    cfg.PrintOnExit,
-		currentTurn:    -1,
+	projectContext := cloneProjectContext(options.ProjectContext)
+	detectedContext := cloneProjectContext(options.ProjectContext)
+
+	m := &model{
+		state:                  StateViewing,
+		startupQuery:           strings.TrimSpace(initialQuery),
+		viewport:               vp,
+		sourcesList:            ui.NewSources(styles),
+		followInput:            follow,
+		searchInput:            searchInput,
+		spinner:                spin,
+		statusBar:              ui.NewStatusBar(styles),
+		styles:                 styles,
+		searchProvider:         searchProvider,
+		llmProvider:            llmProvider,
+		orchestrator:           NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat, projectContext),
+		historyStore:           options.HistoryStore,
+		config:                 cfg,
+		autoScroll:             true,
+		printOnExit:            cfg.PrintOnExit,
+		currentTurn:            -1,
+		workingDir:             strings.TrimSpace(options.WorkingDir),
+		projectContext:         projectContext,
+		detectedProjectContext: detectedContext,
 	}
+
+	if options.OpenRecord != nil {
+		m.loadHistoryRecord(options.OpenRecord)
+	}
+	m.refreshInputSuggestions()
+
+	return m
 }
 
 func (m *model) Init() tea.Cmd {
@@ -174,6 +233,9 @@ func (m *model) Init() tea.Cmd {
 	if m.startupQuery != "" {
 		m.state = StateLoading
 		cmds = append(cmds, emitQuery(m.startupQuery, false))
+	} else if m.currentTurn >= 0 {
+		m.state = StateViewing
+		m.syncSources()
 	} else {
 		m.state = StateInput
 		cmds = append(cmds, m.followInput.Focus())
@@ -200,14 +262,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case startQueryMsg:
-		m.beginQuery(msg.Query, msg.FollowUp)
-		return m, tea.Batch(m.startSearch(), m.spinner.Tick)
+		return m, m.beginQuery(msg.Query, msg.FollowUp)
 
 	case searchCompleteMsg:
 		if msg.RequestID != m.requestID {
 			return m, nil
 		}
 		m.searching = false
+		if !m.searchStartTime.IsZero() {
+			m.lastSearchMs = time.Since(m.searchStartTime).Milliseconds()
+		}
 		if msg.Err != nil {
 			m.finishRequest()
 			if m.currentTurn >= 0 {
@@ -226,6 +290,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.turns[m.currentTurn].Sources = sourcesFromSearchResults(results)
 			m.turns[m.currentTurn].Error = ""
 		}
+		m.llmStartTime = time.Now()
 		m.waitingFirstToken = true
 		m.syncSources()
 		m.applyLayout()
@@ -264,13 +329,29 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.RequestID != m.requestID {
 			return m, nil
 		}
+		if !m.llmStartTime.IsZero() {
+			m.lastLLMMs = time.Since(m.llmStartTime).Milliseconds()
+		}
+		m.lastTotalMs = m.lastSearchMs + m.lastLLMMs
+		m.lastTiming = SearchTiming{
+			SearchMs: m.lastSearchMs,
+			LLMMs:    m.lastLLMMs,
+			TotalMs:  m.lastTotalMs,
+		}
+		m.timingVisible = true
+		m.timingSeq++
+		turnIndex := m.currentTurn
 		m.finishRequest()
 		if m.state == StateLoading {
 			m.state = StateViewing
 			m.applyLayout()
 		}
 		m.refreshViewport(m.autoScroll)
-		return m, nil
+		cmds := []tea.Cmd{clearTimingCmd(m.timingSeq)}
+		if cmd := m.saveTurnToHistoryCmd(turnIndex); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case streamErrMsg:
 		if msg.RequestID != m.requestID {
@@ -284,6 +365,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncSources()
 		m.applyLayout()
 		m.refreshViewport(false)
+		return m, nil
+
+	case historySavedMsg:
+		if msg.Err != nil {
+			return m, nil
+		}
+		if msg.TurnIndex >= 0 && msg.TurnIndex < len(m.turns) {
+			id := msg.ID
+			m.turns[msg.TurnIndex].HistoryID = &id
+		}
+		return m, nil
+
+	case timingClearMsg:
+		if msg.Seq == m.timingSeq {
+			m.timingVisible = false
+		}
 		return m, nil
 
 	case clipboardResultMsg:
@@ -390,7 +487,8 @@ func (m *model) handleInputKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		m.followInput.Blur()
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
+		m.inputSuggestionsFocused = false
 		if len(m.turns) == 0 {
 			m.state = StateInput
 			m.applyLayout()
@@ -399,12 +497,37 @@ func (m *model) handleInputKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.state = StateViewing
 		return m.syncLayout(false)
+	case "down", "ctrl+n":
+		if m.shouldRenderInputSuggestions() {
+			m.moveInputSuggestion(1)
+			return nil
+		}
+		return nil
+	case "up", "ctrl+p":
+		if m.shouldRenderInputSuggestions() {
+			m.moveInputSuggestion(-1)
+			return nil
+		}
+		return nil
+	case "j":
+		if m.inputSuggestionsFocused {
+			m.moveInputSuggestion(1)
+			return nil
+		}
+	case "k":
+		if m.inputSuggestionsFocused {
+			m.moveInputSuggestion(-1)
+			return nil
+		}
 	case "tab":
-		if m.tryAutocompleteSlashCommand() {
-			return m.syncLayout(false)
+		if m.acceptSelectedInputSuggestion() {
+			return m.followInput.Focus()
 		}
 		return nil
 	case "enter":
+		if m.shouldAcceptSuggestionOnEnter() && m.acceptSelectedInputSuggestion() {
+			return m.followInput.Focus()
+		}
 		query := strings.TrimSpace(m.followInput.Value())
 		if query == "" {
 			return m.flash("Follow-up query is empty", "warning")
@@ -412,18 +535,26 @@ func (m *model) handleInputKeys(msg tea.KeyMsg) tea.Cmd {
 		if strings.HasPrefix(query, "/") {
 			return m.executeSlashCommand(query)
 		}
-		m.followInput.Blur()
-		m.followInput.SetValue("")
-		return emitQuery(query, m.queryCount > 0)
-	default:
-		var cmd tea.Cmd
-		m.followInput, cmd = m.followInput.Update(msg)
-		if len(m.turns) == 0 {
-			m.applyLayout()
-			m.refreshViewport(false)
+		if _, _, err := prepareAttachedFiles(query, m.workingDir); err != nil {
+			return m.flash("Attachment failed: "+err.Error(), "error")
 		}
-		return cmd
+		m.followInput.Blur()
+		m.setFollowInputValue("")
+		m.inputSuggestionsFocused = false
+		return emitQuery(query, m.queryCount > 0)
 	}
+
+	if m.inputSuggestionsFocused && (len(msg.Runes) > 0 || isEditingKey(msg.String())) {
+		m.inputSuggestionsFocused = false
+	}
+	var cmd tea.Cmd
+	m.followInput, cmd = m.followInput.Update(msg)
+	m.refreshInputSuggestions()
+	if len(m.turns) == 0 {
+		m.applyLayout()
+		m.refreshViewport(false)
+	}
+	return cmd
 }
 
 func (m *model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
@@ -536,7 +667,7 @@ func (m *model) handleViewingKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.syncLayout(false)
 	case "f":
 		m.state = StateInput
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
 		return m.followInput.Focus()
@@ -582,10 +713,18 @@ func (m *model) handleViewingKeys(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *model) beginQuery(query string, followUp bool) {
+func (m *model) beginQuery(query string, followUp bool) tea.Cmd {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return
+		return nil
+	}
+
+	searchQuery, attachedFiles, err := prepareAttachedFiles(query, m.workingDir)
+	if err != nil {
+		m.state = StateInput
+		m.applyLayout()
+		m.refreshViewport(false)
+		return tea.Batch(m.followInput.Focus(), m.flash("Attachment failed: "+err.Error(), "error"))
 	}
 
 	m.stopActiveRequest()
@@ -593,8 +732,10 @@ func (m *model) beginQuery(query string, followUp bool) {
 	m.requestCtx, m.cancel = context.WithCancel(context.Background())
 
 	m.turns = append(m.turns, Turn{
-		Query:      query,
-		IsFollowUp: followUp,
+		Query:         query,
+		SearchQuery:   effectiveSearchQuery(query, searchQuery, attachedFiles),
+		AttachedFiles: attachedFiles,
+		IsFollowUp:    followUp,
 	})
 	m.currentTurn = len(m.turns) - 1
 	m.queryCount = len(m.turns)
@@ -604,12 +745,15 @@ func (m *model) beginQuery(query string, followUp bool) {
 	m.waitingFirstToken = false
 	m.autoScroll = true
 	m.newContent = false
+	m.overlayContent = ""
+	m.timingVisible = false
 	m.state = StateLoading
 	m.codeBlocks = nil
 	m.codeSelect = 0
 	m.syncSources()
 	m.applyLayout()
 	m.refreshViewport(true)
+	return tea.Batch(m.startSearch(), m.spinner.Tick)
 }
 
 func (m *model) retryCurrentTurn() tea.Cmd {
@@ -617,10 +761,17 @@ func (m *model) retryCurrentTurn() tea.Cmd {
 		return nil
 	}
 
+	searchQuery, attachedFiles, err := prepareAttachedFiles(m.turns[m.currentTurn].Query, m.workingDir)
+	if err != nil {
+		return m.flash("Attachment failed: "+err.Error(), "error")
+	}
+
 	m.stopActiveRequest()
 	m.requestID++
 	m.requestCtx, m.cancel = context.WithCancel(context.Background())
 
+	m.turns[m.currentTurn].SearchQuery = effectiveSearchQuery(m.turns[m.currentTurn].Query, searchQuery, attachedFiles)
+	m.turns[m.currentTurn].AttachedFiles = attachedFiles
 	m.turns[m.currentTurn].Response = ""
 	m.turns[m.currentTurn].Error = ""
 	m.turns[m.currentTurn].Sources = nil
@@ -630,6 +781,8 @@ func (m *model) retryCurrentTurn() tea.Cmd {
 	m.waitingFirstToken = false
 	m.autoScroll = true
 	m.newContent = false
+	m.overlayContent = ""
+	m.timingVisible = false
 	m.state = StateLoading
 	m.syncSources()
 	m.applyLayout()
@@ -638,10 +791,19 @@ func (m *model) retryCurrentTurn() tea.Cmd {
 }
 
 func (m *model) startSearch() tea.Cmd {
-	if m.currentTurn < 0 || m.requestCtx == nil {
+	if m.currentTurn < 0 || m.requestCtx == nil || m.orchestrator == nil {
 		return nil
 	}
-	return searchCmd(m.requestCtx, m.searchProvider, m.turns[m.currentTurn].Query, m.config.MaxResults, m.requestID)
+	m.searchStartTime = time.Now()
+	m.llmStartTime = time.Time{}
+	m.lastSearchMs = 0
+	m.lastLLMMs = 0
+	m.lastTotalMs = 0
+	query := strings.TrimSpace(m.turns[m.currentTurn].SearchQuery)
+	if query == "" {
+		query = strings.TrimSpace(m.turns[m.currentTurn].Query)
+	}
+	return searchCmd(m.requestCtx, m.orchestrator, query, m.requestID)
 }
 
 func (m *model) startLLMStream(results []searchpkg.SearchResult) tea.Cmd {
@@ -655,6 +817,7 @@ func (m *model) startLLMStream(results []searchpkg.SearchResult) tea.Cmd {
 	ctx := m.requestCtx
 	query := m.turns[m.currentTurn].Query
 	history := m.conversationHistory()
+	attachedFiles := append([]AttachedFile(nil), m.turns[m.currentTurn].AttachedFiles...)
 	requestID := m.requestID
 	orchestrator := m.orchestrator
 
@@ -662,7 +825,7 @@ func (m *model) startLLMStream(results []searchpkg.SearchResult) tea.Cmd {
 		defer close(sub)
 
 		sawTokens := false
-		response, err := orchestrator.StreamAnswer(ctx, query, results, history, func(token string) {
+		response, err := orchestrator.StreamAnswer(ctx, query, results, history, attachedFiles, func(token string) {
 			sawTokens = true
 			sendStreamMsg(ctx, sub, tokenMsg{RequestID: requestID, Text: token})
 		})
@@ -704,15 +867,22 @@ func (m *model) applyLayout() {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
+	if m.state == StateInput {
+		m.refreshInputSuggestions()
+	}
 
-	m.contentW = max(18, m.width-2)
-	maxContentH := max(6, m.height-2)
+	m.contentW = max(1, m.width-m.styles.AppFrame.GetHorizontalFrameSize())
+	maxContentH := max(1, m.height-m.styles.AppFrame.GetVerticalFrameSize())
 	if len(m.turns) == 0 {
-		m.contentH = min(maxContentH, startupShellMaxHeight)
+		shellMaxHeight := startupShellMaxHeight
+		if m.shouldRenderInputSuggestions() {
+			shellMaxHeight = startupInteractiveShellMaxHeight
+		}
+		m.contentH = min(maxContentH, shellMaxHeight)
 	} else {
 		m.contentH = min(maxContentH, activeShellMaxHeight)
 	}
-	m.summaryW = max(12, m.contentW)
+	m.summaryW = m.contentW
 
 	headerH := 1
 	if len(m.turns) == 0 {
@@ -725,8 +895,8 @@ func (m *model) applyLayout() {
 
 	sourcesH := 0
 	switch {
-	case len(m.turns) == 0 && m.isSlashInput():
-		sourcesH = startupSlashSuggestionsHeight
+	case m.shouldRenderInputSuggestions():
+		sourcesH = m.currentSuggestionPanelHeight()
 	case len(m.turns) > 0 && m.state == StateInput && !m.isSlashInput():
 		sourcesH = inputComposerHeight
 	case len(m.turns) > 0:
@@ -734,12 +904,20 @@ func (m *model) applyLayout() {
 	}
 
 	available := m.contentH - headerH - footerH
+	if available < 1 {
+		headerH = 0
+		available = m.contentH - footerH
+	}
+	if available < 1 {
+		sourcesH = 0
+		available = max(1, m.contentH-footerH)
+	}
 	minSummary := 6
 	if len(m.turns) == 0 {
 		minSummary = 3
 	}
 
-	startupPreferredSummary := ui.PreferredSplashHeight(max(12, m.contentW-2)) + 2
+	startupPreferredSummary := ui.PreferredSplashHeight(max(1, m.contentW-2)) + 2
 	if len(m.turns) == 0 && sourcesH > 0 && available-sourcesH < startupPreferredSummary {
 		sourcesH = max(0, available-startupPreferredSummary)
 	}
@@ -754,16 +932,16 @@ func (m *model) applyLayout() {
 	} else {
 		m.sourcesH = 0
 	}
-	m.summaryH = max(3, available-m.sourcesH)
+	m.summaryH = max(1, available-m.sourcesH)
 	if m.isPlainStartupState() {
-		m.summaryH = min(max(3, available), startupPreferredSummary+1)
+		m.summaryH = min(max(1, available), startupPreferredSummary+1)
 	}
 
-	m.viewport.Width = max(8, m.summaryW-m.styles.SummaryPanel.GetHorizontalFrameSize())
+	m.viewport.Width = max(1, m.summaryW-m.styles.SummaryPanel.GetHorizontalFrameSize())
 	m.viewport.Height = max(1, m.summaryH-m.styles.SummaryPanel.GetVerticalFrameSize())
 	m.sourcesList.SetSize(m.contentW, m.sourcesH)
 
-	inputWidth := max(10, m.contentW-2)
+	inputWidth := max(1, m.contentW-2)
 	m.followInput.Width = inputWidth
 	m.searchInput.Width = inputWidth
 
@@ -776,7 +954,7 @@ func (m *model) initRenderer() {
 	}
 
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithWordWrap(max(20, m.viewport.Width-2)),
+		glamour.WithWordWrap(max(1, m.viewport.Width-2)),
 		glamour.WithStylesFromJSONBytes(m.styles.GlamourJSON()),
 		glamour.WithPreservedNewLines(),
 		glamour.WithEmoji(),
@@ -787,7 +965,7 @@ func (m *model) initRenderer() {
 }
 
 func (m *model) refreshViewport(forceBottom bool) {
-	m.output = strings.TrimSpace(m.composeTranscript())
+	m.output = strings.TrimSpace(m.currentViewportMarkdown())
 
 	if m.renderer == nil {
 		m.initRenderer()
@@ -845,6 +1023,13 @@ func (m *model) composeTranscript() string {
 	}
 
 	return b.String()
+}
+
+func (m *model) currentViewportMarkdown() string {
+	if strings.TrimSpace(m.overlayContent) != "" {
+		return strings.TrimSpace(m.overlayContent)
+	}
+	return strings.TrimSpace(m.composeTranscript())
 }
 
 func (m *model) recomputeSearchMatches() {
@@ -983,11 +1168,26 @@ func (m *model) headerView() string {
 		rightCount = fmt.Sprintf("[%d/%d]", m.queryCount, m.queryCount)
 	}
 	right := m.styles.HeaderCounter.Render(rightCount)
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	remaining := max(0, m.contentW-leftWidth-rightWidth)
+	if remaining <= 1 {
+		row := left + strings.Repeat(" ", max(0, m.contentW-leftWidth-rightWidth)) + right
+		return m.styles.HeaderBar.Width(m.contentW).Render(row)
+	}
 
-	maxQueryWidth := max(12, m.contentW-lipgloss.Width(left)-lipgloss.Width(right)-6)
-	center := m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", truncateForHeader(query, maxQueryWidth-2)))
-	space := max(0, m.contentW-lipgloss.Width(left)-lipgloss.Width(center)-lipgloss.Width(right)-4)
-	row := left + " │ " + center + strings.Repeat(" ", space) + right
+	centerBudget := max(0, remaining-3)
+	center := ""
+	if centerBudget > 0 {
+		center = m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", truncateForHeader(query, max(0, centerBudget-2))))
+	}
+
+	row := left
+	if center != "" {
+		row += " │ " + center
+	}
+	padding := max(0, m.contentW-lipgloss.Width(row)-rightWidth)
+	row += strings.Repeat(" ", padding) + right
 	return m.styles.HeaderBar.Width(m.contentW).Render(row)
 }
 
@@ -999,8 +1199,12 @@ func (m *model) summaryView() string {
 		return m.wrapSummary(ui.RenderCodeSelection(m.styles, summaryWidth, summaryHeight, buildCodePreviews(m.codeBlocks), m.codeSelect))
 	}
 
+	if strings.TrimSpace(m.overlayContent) != "" {
+		return m.wrapSummary(m.viewport.View())
+	}
+
 	if len(m.turns) == 0 {
-		return m.wrapStartup(ui.RenderSplash(m.styles, max(12, m.contentW-2), max(3, m.summaryH), m.config.OutputFormat, m.llmProvider.Name()))
+		return m.wrapStartup(ui.RenderSplash(m.styles, max(1, m.contentW-2), max(1, m.summaryH), m.config.OutputFormat, m.llmProvider.Name()))
 	}
 
 	if m.currentTurn >= 0 && strings.TrimSpace(m.turns[m.currentTurn].Response) == "" {
@@ -1041,11 +1245,11 @@ func (m *model) footerView() string {
 }
 
 func (m *model) sourcesSectionView() string {
-	if len(m.turns) == 0 && m.state == StateInput && !m.isSlashInput() {
+	if len(m.turns) == 0 && m.state == StateInput && !m.shouldRenderInputSuggestions() {
 		return ui.RenderWelcomeHint(m.styles, m.contentW, max(1, m.sourcesH))
 	}
-	if m.state == StateInput && m.isSlashInput() {
-		return m.renderSlashSuggestions()
+	if m.shouldRenderInputSuggestions() {
+		return m.renderInputSuggestions()
 	}
 	if m.state == StateInput {
 		return m.renderComposer()
@@ -1074,21 +1278,40 @@ func (m *model) statusHints() string {
 }
 
 func (m *model) statusMeta() string {
-	if m.searching {
-		return "Searching via Tavily... · " + m.config.OutputFormat
-	}
-	if m.waitingFirstToken {
-		return "Reading sources via " + m.llmProvider.Name() + "... · " + m.config.OutputFormat
-	}
-	if m.streaming {
-		return "Streaming via " + m.llmProvider.Name() + " · " + m.config.OutputFormat + " · " + strconv.Itoa(m.tokenCount) + "t"
+	stack := m.projectStackLabel()
+	join := func(parts ...string) string {
+		filtered := make([]string, 0, len(parts))
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				filtered = append(filtered, part)
+			}
+		}
+		return strings.Join(filtered, " │ ")
 	}
 
-	parts := []string{m.llmProvider.Name(), m.config.OutputFormat, fmt.Sprintf("%d%%", int(m.viewport.ScrollPercent()*100))}
+	if m.searching {
+		return join("Searching via Tavily...", m.config.OutputFormat, stack)
+	}
+	if m.waitingFirstToken {
+		return join("Reading sources via "+m.llmProvider.Name()+"...", m.config.OutputFormat, stack)
+	}
+	if m.streaming {
+		return join("Streaming via "+m.llmProvider.Name(), m.config.OutputFormat, strconv.Itoa(m.tokenCount)+"t", stack)
+	}
+	if m.timingVisible && m.lastTiming.TotalMs > 0 {
+		return join(
+			fmt.Sprintf("%dms (search: %dms, llm: %dms)", m.lastTiming.TotalMs, m.lastTiming.SearchMs, m.lastTiming.LLMMs),
+			m.llmProvider.Name(),
+			stack,
+		)
+	}
+
+	parts := []string{m.llmProvider.Name(), stack}
 	if strings.TrimSpace(m.searchQuery) != "" && len(m.searchMatches) > 0 {
 		parts = append(parts, fmt.Sprintf("%d/%d", m.searchIndex+1, len(m.searchMatches)))
 	}
-	return strings.Join(parts, " · ")
+	return join(parts...)
 }
 
 func (m *model) renderComposer() string {
@@ -1099,6 +1322,18 @@ func (m *model) renderComposer() string {
 		state.LastQuery = m.turns[m.currentTurn].Query
 	}
 	return ui.RenderComposer(m.styles, m.contentW, m.sourcesH, state)
+}
+
+func (m *model) projectStackLabel() string {
+	return projectStackLabel(m.projectContext)
+}
+
+func (m *model) showOverlay(markdown string) tea.Cmd {
+	m.overlayContent = strings.TrimSpace(markdown)
+	m.setFollowInputValue("")
+	m.applyLayout()
+	m.refreshViewport(false)
+	return m.followInput.Focus()
 }
 
 func (m *model) flash(text, kind string) tea.Cmd {
@@ -1182,15 +1417,18 @@ func buildCodePreviews(blocks []CodeBlock) []ui.CodePreview {
 }
 
 func (m *model) wrapSummary(content string) string {
-	return m.styles.SummaryPanel.Width(m.summaryW).Height(m.summaryH).Render(content)
+	return m.styles.SummaryPanel.
+		Width(max(0, m.summaryW-m.styles.SummaryPanel.GetHorizontalFrameSize())).
+		Height(max(0, m.summaryH-m.styles.SummaryPanel.GetVerticalFrameSize())).
+		Render(content)
 }
 
 func (m *model) wrapStartup(content string) string {
-	return lipgloss.NewStyle().
-		Width(m.contentW).
-		Height(m.summaryH).
+	style := lipgloss.NewStyle().
 		Padding(0, 1).
-		Render(content)
+		Width(max(0, m.contentW-2)).
+		Height(max(0, m.summaryH))
+	return style.Render(content)
 }
 
 func (m *model) isStartupState() bool {
@@ -1198,7 +1436,7 @@ func (m *model) isStartupState() bool {
 }
 
 func (m *model) isPlainStartupState() bool {
-	return m.isStartupState() && !m.isSlashInput()
+	return m.isStartupState() && !m.shouldRenderInputSuggestions()
 }
 
 func (m *model) syncLayout(forceBottom bool) tea.Cmd {
@@ -1211,10 +1449,10 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 	commandLine := strings.TrimSpace(strings.TrimPrefix(raw, "/"))
 	parts := strings.Fields(commandLine)
 	if len(parts) == 0 {
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return m.flash("Available: /backend /mode /model /depth /results /show /help /exit", "warning")
+		return m.flash("Available: /backend /mode /model /depth /results /context /history /recent /stats /show /help /exit", "warning")
 	}
 
 	command := strings.ToLower(parts[0])
@@ -1225,20 +1463,83 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.stopActiveRequest()
 		return tea.Quit
 	case "help":
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /copy, /show, /help, /exit", "success"))
+		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /context, /history, /recent, /stats, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
 		return tea.Batch(m.followInput.Focus(), m.flash(m.sessionSummary(), "success"))
+	case "context":
+		switch {
+		case len(args) == 0:
+			return m.showOverlay(contextSummaryMarkdown(m.projectContext, m.detectedProjectContext))
+		case len(args) == 1 && strings.EqualFold(args[0], "off"):
+			m.projectContext = nil
+			if m.orchestrator != nil {
+				m.orchestrator.projectContext = nil
+			}
+			return m.showOverlay(contextSummaryMarkdown(m.projectContext, m.detectedProjectContext))
+		case len(args) == 1 && strings.EqualFold(args[0], "on"):
+			m.detectedProjectContext = cloneProjectContext(projectctx.DetectContext(m.workingDir))
+			m.projectContext = cloneProjectContext(m.detectedProjectContext)
+			if m.orchestrator != nil {
+				m.orchestrator.projectContext = m.projectContext
+			}
+			return m.showOverlay(contextSummaryMarkdown(m.projectContext, m.detectedProjectContext))
+		default:
+			return m.failSlashCommand("Usage: /context [on|off]")
+		}
+	case "history":
+		if len(args) == 0 {
+			return m.failSlashCommand("Usage: /history <query>")
+		}
+		if m.historyStore == nil {
+			return m.failSlashCommand("History is not available for this session")
+		}
+		records, err := m.historyStore.Search(strings.Join(args, " "), 10)
+		if err != nil {
+			return m.failSlashCommand("History search failed: " + err.Error())
+		}
+		return m.showOverlay(historyRecordsMarkdown("History Search", records))
+	case "recent":
+		if m.historyStore == nil {
+			return m.failSlashCommand("History is not available for this session")
+		}
+		limit := 10
+		if len(args) == 1 {
+			value, err := strconv.Atoi(args[0])
+			if err != nil || value <= 0 {
+				return m.failSlashCommand("Usage: /recent [count]")
+			}
+			limit = value
+		} else if len(args) > 1 {
+			return m.failSlashCommand("Usage: /recent [count]")
+		}
+		records, err := m.historyStore.Recent(limit, "")
+		if err != nil {
+			return m.failSlashCommand("Recent history failed: " + err.Error())
+		}
+		return m.showOverlay(historyRecordsMarkdown("Recent Searches", records))
+	case "stats":
+		if len(args) != 0 {
+			return m.failSlashCommand("Usage: /stats")
+		}
+		if m.historyStore == nil {
+			return m.failSlashCommand("History is not available for this session")
+		}
+		stats, err := m.historyStore.Stats()
+		if err != nil {
+			return m.failSlashCommand("History stats failed: " + err.Error())
+		}
+		return m.showOverlay(historyStatsMarkdown(stats))
 	case "copy":
 		if strings.TrimSpace(m.composeTranscript()) == "" || len(m.turns) == 0 {
 			return m.failSlashCommand("Nothing to copy yet")
 		}
-		m.followInput.SetValue("")
+		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
 		return tea.Batch(m.followInput.Focus(), copyTextCmd(m.composeTranscript(), "chat history", lineCount(m.composeTranscript())))
@@ -1317,12 +1618,50 @@ func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
 	m.config = cfg
 	m.searchProvider = searchProvider
 	m.llmProvider = llmProvider
-	m.orchestrator = NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat)
+	m.orchestrator = NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat, m.projectContext)
 
-	m.followInput.SetValue("")
+	m.setFollowInputValue("")
 	m.applyLayout()
 	m.refreshViewport(false)
 	return tea.Batch(m.followInput.Focus(), m.flash(successText+" · "+m.sessionSummary(), "success"))
+}
+
+func (m *model) saveTurnToHistoryCmd(turnIndex int) tea.Cmd {
+	if m.historyStore == nil || turnIndex < 0 || turnIndex >= len(m.turns) {
+		return nil
+	}
+
+	turn := m.turns[turnIndex]
+	if strings.TrimSpace(turn.Query) == "" || strings.TrimSpace(turn.Response) == "" {
+		return nil
+	}
+
+	var parentID *int64
+	if turn.IsFollowUp && turnIndex > 0 && m.turns[turnIndex-1].HistoryID != nil {
+		value := *m.turns[turnIndex-1].HistoryID
+		parentID = &value
+	}
+
+	record := &historypkg.SearchRecord{
+		Query:        turn.Query,
+		Response:     sanitizeAssistantResponse(turn.Response),
+		Sources:      convertSources(turn.Sources),
+		ProjectDir:   m.workingDir,
+		ProjectStack: m.projectStackLabel(),
+		LLMBackend:   m.llmProvider.Name(),
+		OutputFormat: m.config.OutputFormat,
+		SearchMs:     m.lastSearchMs,
+		LLMMs:        m.lastLLMMs,
+		TotalMs:      m.lastTotalMs,
+		IsFollowUp:   turn.IsFollowUp,
+		ParentID:     parentID,
+	}
+
+	store := m.historyStore
+	return func() tea.Msg {
+		id, err := store.Save(record)
+		return historySavedMsg{TurnIndex: turnIndex, ID: id, Err: err}
+	}
 }
 
 func (m *model) failSlashCommand(text string) tea.Cmd {
@@ -1331,12 +1670,13 @@ func (m *model) failSlashCommand(text string) tea.Cmd {
 
 func (m *model) sessionSummary() string {
 	return fmt.Sprintf(
-		"backend=%s model=%s format=%s depth=%s results=%d",
+		"backend=%s model=%s format=%s depth=%s results=%d context=%s",
 		m.config.LLMBackend,
 		activeModel(m.config),
 		m.config.OutputFormat,
 		m.config.SearchDepth,
 		m.config.MaxResults,
+		fallbackString(m.projectStackLabel(), "off"),
 	)
 }
 
@@ -1406,7 +1746,7 @@ func (m *model) injectCodeBlockPlaceholders(markdown string) (string, []rendered
 
 		blocks = append(blocks, renderedCodeBlock{
 			Placeholder: placeholder,
-			Rendered:    ui.RenderCodeBlock(m.styles, max(10, m.viewport.Width-2), language, content),
+			Rendered:    ui.RenderCodeBlock(m.styles, max(1, m.viewport.Width-2), language, content),
 		})
 
 		return "\n" + placeholder + "\n"
@@ -1518,27 +1858,42 @@ func isValidOutputFormat(value string) bool {
 	}
 }
 
+func effectiveSearchQuery(rawQuery, preparedQuery string, attachedFiles []AttachedFile) string {
+	query := strings.TrimSpace(preparedQuery)
+	if query != "" {
+		return query
+	}
+	if len(attachedFiles) == 0 {
+		return strings.TrimSpace(rawQuery)
+	}
+
+	paths := make([]string, 0, len(attachedFiles))
+	for _, file := range attachedFiles {
+		if path := strings.TrimSpace(file.DisplayPath); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return strings.TrimSpace(rawQuery)
+	}
+	return "explain " + strings.Join(paths, " ")
+}
+
+func isEditingKey(key string) bool {
+	switch key {
+	case "backspace", "delete", "left", "right", "home", "end", "ctrl+a", "ctrl+e", "alt+b", "alt+f", "ctrl+w", "ctrl+u", "ctrl+k":
+		return true
+	default:
+		return false
+	}
+}
+
 func (m *model) isSlashInput() bool {
 	return strings.HasPrefix(strings.TrimSpace(m.followInput.Value()), "/")
 }
 
 func (m *model) tryAutocompleteSlashCommand() bool {
-	if !m.isSlashInput() {
-		return false
-	}
-
-	value := strings.TrimSpace(m.followInput.Value())
-	if strings.Contains(value, " ") {
-		return false
-	}
-
-	matches := m.filteredSlashCommands(value)
-	if len(matches) == 0 {
-		return false
-	}
-
-	m.followInput.SetValue("/" + matches[0].Name + " ")
-	return true
+	return m.inputSuggestionMode == inputSuggestionSlash && m.acceptSelectedInputSuggestion()
 }
 
 func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
@@ -1550,6 +1905,10 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		{Name: "model", Usage: "/model <name>", Description: "set the model for the active backend"},
 		{Name: "depth", Usage: "/depth <basic|advanced>", Description: "change Tavily search depth"},
 		{Name: "results", Usage: "/results <n>", Description: "set how many Tavily results to inject into context"},
+		{Name: "context", Usage: "/context [on|off]", Description: "show or toggle detected project context"},
+		{Name: "history", Usage: "/history <query>", Description: "search saved local history from previous queries"},
+		{Name: "recent", Usage: "/recent [count]", Description: "show the most recent saved searches"},
+		{Name: "stats", Usage: "/stats", Description: "show aggregate search history stats"},
 		{Name: "copy", Usage: "/copy", Description: "copy the full chat history including follow-ups"},
 		{Name: "show", Usage: "/show", Description: "show the active session configuration"},
 		{Name: "help", Usage: "/help", Description: "list available slash commands"},
@@ -1561,43 +1920,16 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 	}
 
 	filtered := make([]slashCommandSpec, 0, len(all))
+	fallback := make([]slashCommandSpec, 0, len(all))
 	for _, command := range all {
-		if strings.HasPrefix(command.Name, query) {
+		switch {
+		case strings.HasPrefix(command.Name, query):
 			filtered = append(filtered, command)
+		case strings.Contains(command.Name, query):
+			fallback = append(fallback, command)
 		}
 	}
-	return filtered
-}
-
-func (m *model) renderSlashSuggestions() string {
-	matches := m.filteredSlashCommands(strings.TrimSpace(m.followInput.Value()))
-	innerWidth := max(0, m.contentW-4)
-	visibleRows := max(1, m.sourcesH-2)
-
-	lines := []string{m.styles.HorizontalRule(innerWidth, "Commands")}
-	if len(matches) == 0 {
-		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("No command matches"))
-	} else {
-		limit := min(5, min(len(matches), max(1, visibleRows-1)))
-		for i := 0; i < limit; i++ {
-			cmd := matches[i]
-			header := m.styles.CodeLabel.Render(cmd.Usage)
-			desc := m.styles.Dimmed.Render(cmd.Description)
-			lines = append(lines, lipgloss.NewStyle().Width(innerWidth).Render(header+"  "+desc))
-		}
-		if len(matches) > limit && len(lines) < visibleRows+1 {
-			lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render(fmt.Sprintf("+%d more", len(matches)-limit)))
-		}
-		if len(lines) < visibleRows+1 {
-			lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("Tab autocomplete · Enter run command"))
-		}
-	}
-
-	for len(lines) < visibleRows+1 {
-		lines = append(lines, strings.Repeat(" ", innerWidth))
-	}
-
-	return m.styles.SourcesPanelFocus.Width(m.contentW).Height(m.sourcesH).Render(strings.Join(lines, "\n"))
+	return append(filtered, fallback...)
 }
 
 func emitQuery(query string, followUp bool) tea.Cmd {
@@ -1606,9 +1938,15 @@ func emitQuery(query string, followUp bool) tea.Cmd {
 	}
 }
 
-func searchCmd(ctx context.Context, provider searchpkg.SearchProvider, query string, maxResults, requestID int) tea.Cmd {
+func clearTimingCmd(seq int) tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		return timingClearMsg{Seq: seq}
+	})
+}
+
+func searchCmd(ctx context.Context, orchestrator *Orchestrator, query string, requestID int) tea.Cmd {
 	return func() tea.Msg {
-		results, err := provider.Search(ctx, query, maxResults)
+		results, err := orchestrator.Search(ctx, query)
 		return searchCompleteMsg{RequestID: requestID, Results: results, Err: err}
 	}
 }
@@ -1652,9 +1990,37 @@ func clearScreenCmd() tea.Cmd {
 	}
 }
 
+func (m *model) loadHistoryRecord(record *historypkg.SearchRecord) {
+	if record == nil {
+		return
+	}
+
+	m.turns = []Turn{{
+		Query:       record.Query,
+		SearchQuery: record.Query,
+		Response:    record.Response,
+		Sources:     convertHistorySources(record.Sources),
+		IsFollowUp:  record.IsFollowUp,
+		HistoryID:   int64Ptr(record.ID),
+	}}
+	m.currentTurn = 0
+	m.queryCount = 1
+	m.lastSearchMs = record.SearchMs
+	m.lastLLMMs = record.LLMMs
+	m.lastTotalMs = record.TotalMs
+	m.lastTiming = SearchTiming{
+		SearchMs: record.SearchMs,
+		LLMMs:    record.LLMMs,
+		TotalMs:  record.TotalMs,
+	}
+}
+
 func truncateForHeader(value string, width int) string {
 	value = strings.TrimSpace(value)
-	if width <= 0 || lipgloss.Width(value) <= width {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
 		return value
 	}
 
@@ -1685,4 +2051,8 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
 }

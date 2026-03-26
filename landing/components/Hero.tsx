@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 import CodeBlock from "@/components/ui/CodeBlock";
 
-const installCommand = "curl -fsSL https://vishruthb.github.io/seek/install.sh | sh";
+const installCommand = "curl -fsSL https://seekcli.vercel.app/install.sh | sh";
 const githubURL = "https://github.com/vishruthb/seek";
 
 function GitHubIcon() {
@@ -20,6 +20,38 @@ function GitHubIcon() {
   );
 }
 
+function SeekWordmark() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border-subtle bg-bg-terminal/80 shadow-glow">
+        <svg
+          aria-hidden="true"
+          className="h-5 w-5 text-accent-mint"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="10.5" cy="10.5" r="5.75" />
+          <path d="M15 15l4.5 4.5" />
+          <path d="M8.2 10.5h4.6" />
+          <path d="M10.5 8.2v4.6" />
+        </svg>
+      </div>
+      <div className="flex flex-col">
+        <span className="font-mono text-[1rem] tracking-[0.08em] text-accent-mint sm:text-[1.02rem]">
+          seek
+        </span>
+        <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-text-secondary">
+          cli
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Hero() {
   return (
     <motion.div
@@ -30,9 +62,7 @@ export default function Hero() {
     >
       <div className="space-y-10 lg:space-y-12">
         <div className="flex w-full min-w-0 items-center justify-between gap-4">
-          <div className="font-mono text-[0.92rem] tracking-[0.08em] text-accent-mint sm:text-[1rem]">
-            seek cli
-          </div>
+          <SeekWordmark />
           <a
             href={githubURL}
             target="_blank"
@@ -45,12 +75,13 @@ export default function Hero() {
         </div>
         <div className="space-y-6">
           <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
-            ai-powered web search, all from the comfort of your terminal.
+            terminal search that knows your project, your files, and the live web.
           </h1>
           <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
-            fast, keyboard-first, and lightweight. run ollama when you want the
-            answer step to stay on your machine, or switch to groq and other
-            openai-compatible backends when speed matters more.
+            seek combines fresh web results with the repo you are already in.
+            it detects your stack, lets you attach local files with{" "}
+            <span className="font-mono text-accent-lime">@[...]</span>, saves
+            local history, and shows the search and llm timing behind every answer.
           </p>
         </div>
       </div>
@@ -65,7 +96,8 @@ export default function Hero() {
         <div className="font-mono text-sm text-accent-mint">quick start</div>
         <p className="mt-3 text-sm leading-7 text-text-secondary">
           install seek, run <span className="font-mono text-accent-lime">seek --setup</span>,
-          and ask from your terminal without bouncing through tabs.
+          then try <span className="font-mono text-accent-lime">seek "review @[main.go]"</span>{" "}
+          from a repo and keep iterating from the terminal.
         </p>
       </div>
     </motion.div>

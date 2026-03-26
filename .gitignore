@@ -18,6 +18,7 @@ checksums.txt
 *.tgz
 
 # landing build artifacts
+/.pnpm-store/
 landing/node_modules/
 landing/.next/
 landing/out/

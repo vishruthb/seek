@@ -54,6 +54,12 @@ func (o *OpenAI) Name() string {
 	return o.providerName + "/" + o.model
 }
 
+func (o *OpenAI) Warmup(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, _ = o.StreamChat(ctx, []Message{{Role: "user", Content: "hi"}}, nil)
+}
+
 func (o *OpenAI) StreamChat(ctx context.Context, messages []Message, onToken StreamCallback) (string, error) {
 	if strings.TrimSpace(o.apiKey) == "" {
 		return "", fmt.Errorf("No API key set for %s. Set openai_api_key in config or OPENAI_API_KEY env var.", o.providerName)

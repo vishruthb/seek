@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 type StatusBarModel struct {
 	styles Styles
@@ -15,19 +19,24 @@ func (m StatusBarModel) View(left, right string, width int) string {
 		return ""
 	}
 
-	leftStyle := m.styles.StatusHint.MaxWidth(width)
-	rightStyle := m.styles.StatusMeta.MaxWidth(width)
+	if strings.TrimSpace(left) == "" {
+		return m.styles.StatusBar.Width(width).Render(m.styles.StatusMeta.Render(truncateWidth(strings.TrimSpace(right), width)))
+	}
+	if strings.TrimSpace(right) == "" {
+		return m.styles.StatusBar.Width(width).Render(m.styles.StatusHint.Render(truncateWidth(strings.TrimSpace(left), width)))
+	}
 
-	leftRendered := leftStyle.Render(left)
-	rightRendered := rightStyle.Render(right)
+	rightBudget := max(1, min(width-1, (width*3)/5))
+	leftBudget := max(1, width-rightBudget-1)
 
-	row := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftRendered,
-		lipgloss.NewStyle().Width(max(0, width-lipgloss.Width(leftRendered)-lipgloss.Width(rightRendered))).Render(""),
-		rightRendered,
-	)
+	leftText := truncateWidth(strings.TrimSpace(left), leftBudget)
+	leftRendered := m.styles.StatusHint.Render(leftText)
 
+	rightText := truncateWidth(strings.TrimSpace(right), width-lipgloss.Width(leftRendered)-1)
+	rightRendered := m.styles.StatusMeta.Render(rightText)
+	remaining := max(0, width-lipgloss.Width(leftRendered)-lipgloss.Width(rightRendered))
+
+	row := leftRendered + strings.Repeat(" ", remaining) + rightRendered
 	return m.styles.StatusBar.Width(width).Render(row)
 }
 

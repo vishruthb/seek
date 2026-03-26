@@ -24,37 +24,41 @@ const (
 	defaultTheme        = "pastel"
 	defaultOutputFormat = "concise"
 	defaultMaxTurns     = 10
+	defaultHistoryOn    = true
 )
 
 type Config struct {
-	TavilyAPIKey  string `toml:"tavily_api_key"`
-	SearchDepth   string `toml:"search_depth"`
-	MaxResults    int    `toml:"max_results"`
-	LLMBackend    string `toml:"llm_backend"`
-	OllamaURL     string `toml:"ollama_url"`
-	OllamaModel   string `toml:"ollama_model"`
-	OpenAIAPIKey  string `toml:"openai_api_key"`
-	OpenAIBaseURL string `toml:"openai_base_url"`
-	OpenAIModel   string `toml:"openai_model"`
-	OutputFormat  string `toml:"output_format"`
-	Theme         string `toml:"theme"`
-	PrintOnExit   bool   `toml:"print_on_exit"`
-	Browser       string `toml:"browser"`
-	MaxTurns      int    `toml:"max_turns"`
+	TavilyAPIKey   string `toml:"tavily_api_key"`
+	SearchDepth    string `toml:"search_depth"`
+	MaxResults     int    `toml:"max_results"`
+	LLMBackend     string `toml:"llm_backend"`
+	OllamaURL      string `toml:"ollama_url"`
+	OllamaModel    string `toml:"ollama_model"`
+	OpenAIAPIKey   string `toml:"openai_api_key"`
+	OpenAIBaseURL  string `toml:"openai_base_url"`
+	OpenAIModel    string `toml:"openai_model"`
+	OutputFormat   string `toml:"output_format"`
+	Theme          string `toml:"theme"`
+	PrintOnExit    bool   `toml:"print_on_exit"`
+	Browser        string `toml:"browser"`
+	MaxTurns       int    `toml:"max_turns"`
+	HistoryEnabled bool   `toml:"history_enabled"`
+	HistoryDBPath  string `toml:"history_db_path"`
 }
 
 func DefaultConfig() Config {
 	return Config{
-		SearchDepth:   defaultSearchDepth,
-		MaxResults:    defaultMaxResults,
-		LLMBackend:    defaultLLMBackend,
-		OllamaURL:     defaultOllamaURL,
-		OllamaModel:   defaultOllamaModel,
-		OpenAIBaseURL: defaultOpenAIURL,
-		OpenAIModel:   defaultOpenAIModel,
-		OutputFormat:  defaultOutputFormat,
-		Theme:         defaultTheme,
-		MaxTurns:      defaultMaxTurns,
+		SearchDepth:    defaultSearchDepth,
+		MaxResults:     defaultMaxResults,
+		LLMBackend:     defaultLLMBackend,
+		OllamaURL:      defaultOllamaURL,
+		OllamaModel:    defaultOllamaModel,
+		OpenAIBaseURL:  defaultOpenAIURL,
+		OpenAIModel:    defaultOpenAIModel,
+		OutputFormat:   defaultOutputFormat,
+		Theme:          defaultTheme,
+		MaxTurns:       defaultMaxTurns,
+		HistoryEnabled: defaultHistoryOn,
 	}
 }
 
@@ -68,6 +72,14 @@ func ConfigPath() string {
 
 func configDirPath(home string) string {
 	return filepath.Join(home, ".config", "seek")
+}
+
+func DefaultHistoryDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".config", "seek", "history.db")
+	}
+	return filepath.Join(configDirPath(home), "history.db")
 }
 
 func LoadConfig() (Config, error) {
@@ -116,6 +128,17 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if format := strings.TrimSpace(os.Getenv("SEEK_FORMAT")); format != "" {
 		cfg.OutputFormat = format
+	}
+	if path := strings.TrimSpace(os.Getenv("SEEK_HISTORY_DB_PATH")); path != "" {
+		cfg.HistoryDBPath = path
+	}
+	if enabled := strings.TrimSpace(os.Getenv("SEEK_HISTORY_ENABLED")); enabled != "" {
+		switch strings.ToLower(enabled) {
+		case "1", "true", "yes", "on":
+			cfg.HistoryEnabled = true
+		case "0", "false", "no", "off":
+			cfg.HistoryEnabled = false
+		}
 	}
 }
 
@@ -201,6 +224,9 @@ func (c *Config) normalize() {
 
 	if c.MaxTurns <= 0 {
 		c.MaxTurns = defaultMaxTurns
+	}
+	if strings.TrimSpace(c.HistoryDBPath) == "" {
+		c.HistoryDBPath = DefaultHistoryDBPath()
 	}
 }
 

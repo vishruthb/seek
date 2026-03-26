@@ -218,11 +218,11 @@ func (s Styles) HorizontalRule(width int, label string) string {
 	if label == "" {
 		return s.Divider.Render(strings.Repeat("─", width))
 	}
-	prefix := label + " "
-	if len(prefix) >= width {
-		return s.Divider.Render(prefix[:width])
+	prefix := truncateWidth(label, max(1, width-1)) + " "
+	if lipgloss.Width(prefix) >= width {
+		return s.Divider.Render(truncateWidth(prefix, width))
 	}
-	return s.Divider.Render(prefix + strings.Repeat("─", width-len(prefix)))
+	return s.Divider.Render(prefix + strings.Repeat("─", width-lipgloss.Width(prefix)))
 }
 
 func (s Styles) GlamourJSON() []byte {

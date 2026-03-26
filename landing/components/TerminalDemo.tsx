@@ -4,7 +4,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "reac
 
 import { motion, useInView } from "framer-motion";
 
-const exampleQuery = "what is a transformer in ML?";
+const exampleQuery = "add chi middleware around @[internal/http/server.go]";
 const borderEase = [0.32, 0, 0.18, 1] as const;
 const focusTransition = { duration: 0.28, ease: borderEase } as const;
 
@@ -47,7 +47,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
               <span className="font-semibold text-text-bright">seek</span>
               <span className="text-text-primary">│</span>
               <span className="truncate">"{exampleQuery}"</span>
-              <span className="ml-auto text-text-bright">[1/1]</span>
+              <span className="ml-auto text-text-bright">go/chi</span>
             </div>
           </div>
         ),
@@ -57,10 +57,10 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "intro-1",
         node: (
           <DemoText>
-            A transformer is a neural network architecture built around{" "}
-            <span className="font-semibold text-text-bright">self-attention</span>,
-            which lets each token weigh the importance of other tokens in the
-            sequence <span className="text-accent-mint">[1][2]</span>.
+            The current project already looks like a{" "}
+            <span className="font-semibold text-text-bright">Go / Chi</span>{" "}
+            service, and the attached file shows where the router is wired up{" "}
+            <span className="text-accent-mint">[FILE 1]</span>.
           </DemoText>
         ),
       },
@@ -68,9 +68,9 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "intro-2",
         node: (
           <DemoText>
-            Instead of processing text strictly left-to-right, it builds a rich
-            contextual representation in parallel, which made modern LLMs and
-            many vision models practical.
+            Add the middleware at router construction time so every request
+            passes through the same chain before your handlers run{" "}
+            <span className="text-accent-mint">[1][2]</span>.
           </DemoText>
         ),
       },
@@ -79,8 +79,10 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "list-1",
         node: (
           <DemoText>
-            <span className="text-accent-mint">1.</span> Tokens attend to one
-            another instead of relying on recurrence.
+            <span className="text-accent-mint">1.</span> Create a middleware
+            function with the standard{" "}
+            <span className="text-text-bright">func(http.Handler) http.Handler</span>{" "}
+            shape.
           </DemoText>
         ),
       },
@@ -88,8 +90,9 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "list-2",
         node: (
           <DemoText>
-            <span className="text-accent-mint">2.</span> Multiple attention
-            heads capture different relationships at once.
+            <span className="text-accent-mint">2.</span> Register it with{" "}
+            <span className="text-text-bright">r.Use(...)</span> close to where
+            the router is assembled in the attached file.
           </DemoText>
         ),
       },
@@ -97,8 +100,9 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "list-3",
         node: (
           <DemoText>
-            <span className="text-accent-mint">3.</span> Positional information
-            is added so order is still preserved.
+            <span className="text-accent-mint">3.</span> Keep auth, logging,
+            and recovery ordered from broadest to most specific so the chain
+            stays predictable.
           </DemoText>
         ),
       },
@@ -107,8 +111,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "sources-title",
         node: (
           <div className="border-t border-border-subtle pt-3 text-text-secondary">
-            <span className="font-semibold text-text-primary">Sources</span>{" "}
-            <span className="text-accent-mint">──────────────────────────────</span>
+            <span className="font-semibold text-text-primary">Sources + file context</span>{" "}
+            <span className="text-accent-mint">────────────────────────</span>
           </div>
         ),
       },
@@ -117,7 +121,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         node: (
           <div className="rounded-lg bg-bg-tertiary/70 px-2 py-1">
             <span className="mr-2 text-accent-mint">›</span>
-            <span className="text-accent-mint">[1]</span> Attention Is All You Need — arxiv.org
+            <span className="text-accent-mint">[1]</span> Chi middleware guide — go-chi.io
             <span className="float-right text-accent-mint">↗</span>
           </div>
         ),
@@ -126,8 +130,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "source-2",
         node: (
           <DemoText className="pl-4 text-text-secondary">
-            <span className="text-accent-mint">[2]</span> Transformer overview —
-            huggingface.co <span className="float-right text-accent-mint">↗</span>
+            <span className="text-accent-mint">[2]</span> net/http middleware patterns —
+            pkg.go.dev <span className="float-right text-accent-mint">↗</span>
           </DemoText>
         ),
       },
@@ -135,9 +139,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         key: "source-3",
         node: (
           <DemoText className="pl-4 text-text-secondary">
-            <span className="text-accent-mint">[3]</span> Illustrated
-            attention — jalammar.github.io{" "}
-            <span className="float-right text-accent-mint">↗</span>
+            <span className="text-accent-mint">[FILE 1]</span> internal/http/server.go — attached locally{" "}
+            <span className="float-right text-accent-mint">@</span>
           </DemoText>
         ),
       },
@@ -149,8 +152,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
             <span>j/k scroll</span>
             <span>Tab sources</span>
             <span>f follow-up</span>
-            <span>Y yank code</span>
-            <span className="ml-auto font-semibold text-accent-mint">groq/llama-3.3-70b-versatile</span>
+            <span>@[file] attach</span>
+            <span className="ml-auto font-semibold text-accent-mint">642ms · search 211ms · llm 431ms</span>
           </div>
         ),
       },
@@ -297,7 +300,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
                   onChange={(event) => setQuery(event.target.value)}
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
-                  placeholder="Ask anything..."
+                  placeholder='Try: review @[main.go] or /history chi'
                   className="w-full bg-transparent font-mono text-sm text-text-bright outline-none placeholder:text-text-secondary"
                 />
                 <span className="font-mono text-xs text-accent-mint">⏎</span>
@@ -317,9 +320,9 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
       <div className="px-1">
         <div className="section-heading">interactive demo</div>
         <p className="section-copy mt-3">
-          this is meant to feel like the real cli: the question sits in the
-          header, the answer streams below it, and the follow-up bar stays at
-          the bottom.
+          this mirrors the current cli: stack in the header, local file context
+          in the prompt, cited sources kept separate, and timing shown once the
+          answer lands.
         </p>
       </div>
       {terminal}

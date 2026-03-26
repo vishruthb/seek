@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 
 import CodeBlock from "@/components/ui/CodeBlock";
 
-const installCommand = "curl -fsSL https://vishruthb.github.io/seek/install.sh | sh";
+const installCommand = "curl -fsSL https://seekcli.vercel.app/install.sh | sh";
 
 const tabs = [
   {
@@ -15,14 +15,14 @@ const tabs = [
     code: installCommand,
   },
   {
-    id: "go",
-    label: "go install",
-    code: "go install github.com/vishruthb/seek@latest",
+    id: "verify",
+    label: "verify install",
+    code: "seek --version\nseek --setup\nseek --recent",
   },
   {
     id: "source",
     label: "build from source",
-    code: "git clone https://github.com/vishruthb/seek.git\ncd seek\ngo build -o seek .",
+    code: "git clone https://github.com/vishruthb/seek.git\ncd seek\ngo build -o seek .\ninstall -m 0755 ./seek ~/.local/bin/seek",
   },
 ];
 
@@ -35,9 +35,10 @@ export default function InstallSection() {
       <div className="px-1">
         <div className="section-heading">install</div>
         <p className="section-copy mt-3">
-          setup takes about two minutes. install seek, run the local setup
-          wizard, paste your keys, and start asking questions. keep the answer
-          step local with ollama, or point seek at a faster cloud backend.
+          install seek, run the setup wizard, paste your keys, and start from
+          the repo you are already in. seek can detect project context, attach
+          local files, reopen saved sessions, and switch between local and
+          hosted backends.
         </p>
       </div>
 
@@ -52,6 +53,12 @@ export default function InstallSection() {
           <h2 className="font-mono text-2xl font-semibold text-text-bright sm:text-3xl">
             install seek in one line
           </h2>
+          <p className="max-w-2xl text-sm leading-7 text-text-secondary sm:text-base">
+            the installer pulls the latest GitHub release. once it lands, run{" "}
+            <code className="font-mono text-accent-lime">seek --version</code>{" "}
+            and <code className="font-mono text-accent-lime">seek --setup</code>{" "}
+            to get the full stack-aware flow working.
+          </p>
           <div className="w-full">
             <CodeBlock code={installCommand} label="curl | sh" pulseOnView />
           </div>
@@ -115,7 +122,7 @@ export default function InstallSection() {
               >
                 ollama
               </a>{" "}
-              for a self-hosted model pass.
+              when you want the answer step to stay on your machine.
             </p>
           </div>
           <div className="rounded-2xl border border-border-subtle bg-bg-secondary/90 p-5">
@@ -125,8 +132,10 @@ export default function InstallSection() {
             </h3>
             <p className="mt-2 text-sm leading-7 text-text-secondary">
               run <code className="font-mono text-accent-lime">seek --setup</code>,
-              paste your keys, then try{" "}
-              <code className="font-mono text-accent-lime">seek "hello world"</code>.
+              then try{" "}
+              <code className="font-mono text-accent-lime">seek "review @[main.go]"</code>{" "}
+              and reopen it later with{" "}
+              <code className="font-mono text-accent-lime">seek --recent</code>.
             </p>
           </div>
         </div>

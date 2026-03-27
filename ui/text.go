@@ -60,3 +60,17 @@ func padLeftWidth(value string, width int) string {
 	padding := max(0, width-lipgloss.Width(value))
 	return strings.Repeat(" ", padding) + value
 }
+
+func normalizeBlockWidth(value string) string {
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	maxWidth := 0
+	for _, line := range lines {
+		if width := lipgloss.Width(line); width > maxWidth {
+			maxWidth = width
+		}
+	}
+	for idx, line := range lines {
+		lines[idx] = padRightWidth(line, maxWidth)
+	}
+	return strings.Join(lines, "\n")
+}

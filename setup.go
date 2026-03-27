@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 func runSetup() error {
@@ -30,6 +32,7 @@ func runSetupWizard(in io.Reader, out io.Writer, path string) error {
 
 	fmt.Fprintln(out, "seek setup")
 	fmt.Fprintln(out, "press enter to keep the current value shown in brackets.")
+	fmt.Fprintln(out, "note: search queries are sent to Tavily. Attached file contents and search results are sent to your configured LLM backend.")
 	fmt.Fprintf(out, "config path: %s\n\n", path)
 
 	if exists {
@@ -48,7 +51,7 @@ func runSetupWizard(in io.Reader, out io.Writer, path string) error {
 	if err != nil {
 		return err
 	}
-	cfg.TavilyAPIKey, err = promptSecret(reader, out, "tavily api key", cfg.TavilyAPIKey)
+	cfg.TavilyAPIKey, err = promptSecret(reader, in, out, "tavily api key", cfg.TavilyAPIKey)
 	if err != nil {
 		return err
 	}
@@ -67,7 +70,7 @@ func runSetupWizard(in io.Reader, out io.Writer, path string) error {
 
 	switch cfg.LLMBackend {
 	case "openai":
-		cfg.OpenAIAPIKey, err = promptSecret(reader, out, "openai-compatible api key", cfg.OpenAIAPIKey)
+		cfg.OpenAIAPIKey, err = promptSecret(reader, in, out, "openai-compatible api key", cfg.OpenAIAPIKey)
 		if err != nil {
 			return err
 		}
@@ -119,12 +122,26 @@ func promptString(reader *bufio.Reader, out io.Writer, label, current string) (s
 	return value, nil
 }
 
-func promptSecret(reader *bufio.Reader, out io.Writer, label, current string) (string, error) {
+func promptSecret(reader *bufio.Reader, in io.Reader, out io.Writer, label, current string) (string, error) {
 	hint := "blank"
 	if strings.TrimSpace(current) != "" {
 		hint = "currently set"
 	}
 	fmt.Fprintf(out, "%s [%s]: ", label, hint)
+
+	if file, ok := in.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+		line, err := term.ReadPassword(int(file.Fd()))
+		fmt.Fprintln(out)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", label, err)
+		}
+		value := strings.TrimSpace(string(line))
+		if value == "" {
+			return current, nil
+		}
+		return value, nil
+	}
+
 	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return "", fmt.Errorf("read %s: %w", label, err)

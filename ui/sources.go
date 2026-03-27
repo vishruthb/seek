@@ -84,10 +84,13 @@ func (m SourcesModel) View() string {
 	innerWidth := max(0, m.width-panel.GetHorizontalFrameSize())
 	lines := []string{m.styles.HorizontalRule(innerWidth, "Sources")}
 
-	visibleRows := max(1, m.height-panel.GetVerticalFrameSize()-1)
+	visibleRows := m.visibleRows()
 	if len(m.items) == 0 {
 		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("No sources cited"))
 	} else {
+		if header := renderSourceHeader(m.styles, innerWidth); header != "" {
+			lines = append(lines, header)
+		}
 		end := min(len(m.items), m.offset+visibleRows)
 		for idx := m.offset; idx < end; idx++ {
 			item := m.items[idx]
@@ -127,15 +130,30 @@ func renderSourceRow(styles Styles, style lipgloss.Style, width int, selected bo
 		return style.Width(width).MaxWidth(width).Render(truncateWidth(label, width))
 	}
 
-	metaWidth := min(max(12, width/3), 26)
-	if metaWidth >= width {
-		metaWidth = max(8, width/2)
+	if width < 28 {
+		return style.Width(width).MaxWidth(width).Render(truncateWidth(label, width))
 	}
-	labelWidth := max(1, width-metaWidth-1)
-	label = padRightWidth(label, labelWidth)
-	meta := styles.SourceMeta.Render(padLeftWidth(strings.TrimSpace(domain), metaWidth))
-	row := label + " " + meta
+
+	metaWidth := min(max(12, width/4), 24)
+	separator := " │ "
+	labelWidth := max(1, width-metaWidth-lipgloss.Width(separator))
+	left := padRightWidth(label, labelWidth)
+	site := styles.SourceMeta.Render(padRightWidth(strings.TrimSpace(domain), metaWidth))
+	row := left + styles.Dimmed.Render(separator) + site
 	return style.Width(width).MaxWidth(width).Render(row)
+}
+
+func renderSourceHeader(styles Styles, width int) string {
+	if width < 28 {
+		return ""
+	}
+
+	metaWidth := min(max(12, width/4), 24)
+	separator := " │ "
+	labelWidth := max(1, width-metaWidth-lipgloss.Width(separator))
+	left := styles.Dimmed.Render(padRightWidth("Title", labelWidth))
+	right := styles.Dimmed.Render(padRightWidth("Site", metaWidth))
+	return left + styles.Dimmed.Render(separator) + right
 }
 
 func (m *SourcesModel) clamp() {
@@ -152,7 +170,7 @@ func (m *SourcesModel) clamp() {
 		m.selected = len(m.items) - 1
 	}
 
-	visibleRows := max(1, m.height-m.styles.SourcesPanel.GetVerticalFrameSize()-1)
+	visibleRows := m.visibleRows()
 	if m.selected < m.offset {
 		m.offset = m.selected
 	}
@@ -162,6 +180,15 @@ func (m *SourcesModel) clamp() {
 	if m.offset < 0 {
 		m.offset = 0
 	}
+}
+
+func (m *SourcesModel) visibleRows() int {
+	rows := max(1, m.height-m.styles.SourcesPanel.GetVerticalFrameSize()-1)
+	innerWidth := max(0, m.width-m.styles.SourcesPanel.GetHorizontalFrameSize())
+	if renderSourceHeader(m.styles, innerWidth) != "" {
+		rows = max(1, rows-1)
+	}
+	return rows
 }
 
 func min(a, b int) int {

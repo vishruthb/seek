@@ -43,6 +43,9 @@ func TestRunSetupWizardWritesConfigFile(t *testing.T) {
 	if !strings.Contains(output.String(), "wrote config to") {
 		t.Fatalf("expected success output, got %q", output.String())
 	}
+	if !strings.Contains(output.String(), "search queries are sent to Tavily") {
+		t.Fatalf("expected privacy note in setup output, got %q", output.String())
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -74,5 +77,8 @@ func TestRunSetupWizardKeepsExistingConfigWhenOverwriteDeclined(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "setup cancelled") {
 		t.Fatalf("expected cancel message, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "search queries are sent to Tavily") {
+		t.Fatalf("expected privacy note in setup output, got %q", output.String())
 	}
 }

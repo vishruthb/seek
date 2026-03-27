@@ -82,6 +82,13 @@ export SEEK_OPENAI_MODEL="llama-3.3-70b-versatile"
 
 Env vars override `config.toml`.
 
+## Privacy
+
+- Search queries are sent to Tavily for retrieval.
+- Search results and any files you attach with `@[...]` are sent to your configured LLM backend for that query.
+- Use Ollama if you want the answer step to stay local, but Tavily still receives the search query.
+- Search history is stored locally at `~/.config/seek/history.db`; disable it with `history_enabled = false` or clear it with `seek --clear-history`.
+
 ## Usage
 
 ```bash
@@ -111,7 +118,7 @@ explain @[app.go]
 compare @[internal/server.go] and @[internal/router.go]
 ```
 
-As soon as you type `@[`, Seek suggests files from the current working directory. Use `↑` / `↓` to select, then `Enter` or `Tab` to insert the file path. Attached files are read locally and injected into the LLM context for that query.
+As soon as you type `@[`, Seek suggests files from the current working directory. Use `↑` / `↓` to select, then `Enter` or `Tab` to insert the file path. Attached files are read locally and sent to the configured LLM backend as context for that query.
 
 ### History and reopening saved searches
 
@@ -136,7 +143,6 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 /backend ollama
 /mode concise
 /mode learning
-/format explanatory
 /model llama-3.3-70b-versatile
 /depth advanced
 /results 8

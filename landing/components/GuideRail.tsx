@@ -29,7 +29,7 @@ const featureItems = [
   {
     icon: "@[ ]",
     title: "attach local files inline",
-    text: "type @[file] in the input to attach local code context. seek suggests files in the current project as you type.",
+    text: "type @[file] in the input to attach local code context. seek suggests files in the current project as you type, then sends the selected file contents to your configured llm backend for that query.",
   },
   {
     icon: "db",

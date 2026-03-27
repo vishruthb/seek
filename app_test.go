@@ -185,7 +185,7 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	if !strings.Contains(view, "╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝") {
 		t.Fatalf("expected full seek logo to remain visible, got %q", view)
 	}
-	if !strings.Contains(view, "/backend <ollama|openai>") {
+	if !strings.Contains(view, "/backend") {
 		t.Fatalf("expected slash command suggestions to remain visible, got %q", view)
 	}
 }
@@ -206,8 +206,31 @@ func TestSlashSuggestionsNavigateAndAcceptSelection(t *testing.T) {
 	}
 
 	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.followInput.Value(); got != "/format " {
+	if got := m.followInput.Value(); got != "/model " {
 		t.Fatalf("expected enter to accept selected slash suggestion, got %q", got)
+	}
+}
+
+func TestModeSuggestionsAppearAfterExactSlashCommand(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 140
+	m.height = 36
+	m.state = StateInput
+	m.setFollowInputValue("/mode")
+	m.applyLayout()
+
+	if m.inputSuggestionMode != inputSuggestionSlashArg {
+		t.Fatalf("expected slash argument suggestions, got mode %v", m.inputSuggestionMode)
+	}
+	if len(m.inputSuggestions) == 0 || m.inputSuggestions[0].Value != "concise" {
+		t.Fatalf("expected mode suggestions, got %#v", m.inputSuggestions)
+	}
+
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyDown})
+	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.followInput.Value(); got != "/mode learning" {
+		t.Fatalf("expected mode value suggestion to be inserted, got %q", got)
 	}
 }
 
@@ -335,6 +358,24 @@ func TestHistorySlashCommandsRenderSavedEntries(t *testing.T) {
 	}
 }
 
+func TestShowSlashCommandRendersSessionOverlay(t *testing.T) {
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		ProjectContext: &projectctx.ProjectContext{Language: "go", Framework: "chi"},
+	})
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/show")
+	if !strings.Contains(m.overlayContent, "## Session") {
+		t.Fatalf("expected session overlay, got %q", m.overlayContent)
+	}
+	if !strings.Contains(m.overlayContent, "Mode: concise") || !strings.Contains(m.overlayContent, "Project context: go/chi") {
+		t.Fatalf("expected session details in overlay, got %q", m.overlayContent)
+	}
+}
+
 func TestClearHistorySlashCommandDeletesSavedEntriesAndResetsSessionLinks(t *testing.T) {
 	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
@@ -390,14 +431,14 @@ func TestTimingClearsFromStatusMetaAfterTick(t *testing.T) {
 	m.timingVisible = true
 	m.timingSeq = 1
 
-	if got := m.statusMeta(); !strings.Contains(got, "847ms") || !strings.Contains(got, "go/chi") {
+	if got := m.statusMeta(); !strings.Contains(got, "847ms") || !strings.Contains(got, "go/chi") || !strings.Contains(got, "mode=concise") {
 		t.Fatalf("expected timing-rich status meta, got %q", got)
 	}
 
 	if _, cmd := m.Update(timingClearMsg{Seq: 1}); cmd != nil {
 		t.Fatalf("expected no follow-up cmd from timing clear")
 	}
-	if got := m.statusMeta(); strings.Contains(got, "847ms") || !strings.Contains(got, "fake/model") {
+	if got := m.statusMeta(); strings.Contains(got, "847ms") || !strings.Contains(got, "fake/model") || !strings.Contains(got, "depth=basic") {
 		t.Fatalf("expected timing to clear from status meta, got %q", got)
 	}
 }

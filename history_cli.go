@@ -127,6 +127,19 @@ func historyStatsMarkdown(stats *historypkg.HistoryStats) string {
 	)
 }
 
+func sessionStatusMarkdown(cfg Config, providerName, stack string) string {
+	return fmt.Sprintf(
+		"## Session\n\n- Backend: %s\n- Provider: %s\n- Model: %s\n- Mode: %s\n- Search depth: %s\n- Max results: %d\n- Project context: %s\n",
+		fallbackString(cfg.LLMBackend, "unknown"),
+		fallbackString(providerName, "unknown"),
+		fallbackString(activeModel(cfg), "unknown"),
+		fallbackString(cfg.OutputFormat, "concise"),
+		fallbackString(cfg.SearchDepth, "basic"),
+		cfg.MaxResults,
+		fallbackString(stack, "off"),
+	)
+}
+
 func historyClearMarkdown(deleted int64) string {
 	label := "entries"
 	if deleted == 1 {

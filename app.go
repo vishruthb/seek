@@ -1289,25 +1289,50 @@ func (m *model) statusMeta() string {
 		}
 		return strings.Join(filtered, " │ ")
 	}
+	configParts := []string{
+		"mode=" + m.config.OutputFormat,
+		"depth=" + m.config.SearchDepth,
+		fmt.Sprintf("n=%d", m.config.MaxResults),
+	}
 
 	if m.searching {
-		return join("Searching via Tavily...", m.config.OutputFormat, stack)
+		parts := append([]string{"Searching via Tavily..."}, configParts...)
+		if stack != "" {
+			parts = append(parts, stack)
+		}
+		return join(parts...)
 	}
 	if m.waitingFirstToken {
-		return join("Reading sources via "+m.llmProvider.Name()+"...", m.config.OutputFormat, stack)
+		parts := append([]string{"Reading sources via " + m.llmProvider.Name() + "..."}, configParts...)
+		if stack != "" {
+			parts = append(parts, stack)
+		}
+		return join(parts...)
 	}
 	if m.streaming {
-		return join("Streaming via "+m.llmProvider.Name(), m.config.OutputFormat, strconv.Itoa(m.tokenCount)+"t", stack)
+		parts := append([]string{"Streaming via " + m.llmProvider.Name(), strconv.Itoa(m.tokenCount) + "t"}, configParts...)
+		if stack != "" {
+			parts = append(parts, stack)
+		}
+		return join(parts...)
 	}
 	if m.timingVisible && m.lastTiming.TotalMs > 0 {
-		return join(
+		parts := []string{
 			fmt.Sprintf("%dms (search: %dms, llm: %dms)", m.lastTiming.TotalMs, m.lastTiming.SearchMs, m.lastTiming.LLMMs),
 			m.llmProvider.Name(),
-			stack,
-		)
+		}
+		parts = append(parts, configParts...)
+		if stack != "" {
+			parts = append(parts, stack)
+		}
+		return join(parts...)
 	}
 
-	parts := []string{m.llmProvider.Name(), stack}
+	parts := []string{m.llmProvider.Name()}
+	parts = append(parts, configParts...)
+	if stack != "" {
+		parts = append(parts, stack)
+	}
 	if strings.TrimSpace(m.searchQuery) != "" && len(m.searchMatches) > 0 {
 		parts = append(parts, fmt.Sprintf("%d/%d", m.searchIndex+1, len(m.searchMatches)))
 	}
@@ -1468,10 +1493,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.refreshViewport(false)
 		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
-		m.setFollowInputValue("")
-		m.applyLayout()
-		m.refreshViewport(false)
-		return tea.Batch(m.followInput.Focus(), m.flash(m.sessionSummary(), "success"))
+		return m.showOverlay(sessionStatusMarkdown(m.config, m.llmProvider.Name(), m.projectStackLabel()))
 	case "context":
 		switch {
 		case len(args) == 0:
@@ -1567,7 +1589,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		cfg := m.config
 		cfg.LLMBackend = value
 		return m.applySessionConfig(cfg, "Backend set to "+value)
-	case "mode", "format":
+	case "mode":
 		if len(args) != 1 {
 			return m.failSlashCommand("Usage: /mode concise|learning|explanatory|oneliner")
 		}
@@ -1689,7 +1711,7 @@ func (m *model) failSlashCommand(text string) tea.Cmd {
 
 func (m *model) sessionSummary() string {
 	return fmt.Sprintf(
-		"backend=%s model=%s format=%s depth=%s results=%d context=%s",
+		"backend=%s model=%s mode=%s depth=%s results=%d context=%s",
 		m.config.LLMBackend,
 		activeModel(m.config),
 		m.config.OutputFormat,
@@ -1920,7 +1942,6 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 	all := []slashCommandSpec{
 		{Name: "backend", Usage: "/backend <ollama|openai>", Description: "switch the active LLM backend for this session"},
 		{Name: "mode", Usage: "/mode <concise|learning|explanatory|oneliner>", Description: "change the answer style without restarting"},
-		{Name: "format", Usage: "/format <concise|learning|explanatory|oneliner>", Description: "alias for /mode"},
 		{Name: "model", Usage: "/model <name>", Description: "set the model for the active backend"},
 		{Name: "depth", Usage: "/depth <basic|advanced>", Description: "change Tavily search depth"},
 		{Name: "results", Usage: "/results <n>", Description: "set how many Tavily results to inject into context"},
@@ -1931,7 +1952,6 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		{Name: "clear-history", Usage: "/clear-history", Description: "delete all saved local history entries"},
 		{Name: "copy", Usage: "/copy", Description: "copy the full chat history including follow-ups"},
 		{Name: "show", Usage: "/show", Description: "show the active session configuration"},
-		{Name: "help", Usage: "/help", Description: "list available slash commands"},
 		{Name: "exit", Usage: "/exit", Description: "gracefully exit seek"},
 	}
 

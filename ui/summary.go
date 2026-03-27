@@ -50,20 +50,20 @@ func RenderSplash(styles Styles, width, height int, _ string, _ string) string {
 		return ""
 	}
 
-	logo := selectSplashLogo(width, height)
+	logo := normalizeBlockWidth(selectSplashLogo(width, height))
 	logoHeight := strings.Count(logo, "\n") + 1
 	spareLines := max(0, height-(logoHeight+2))
 
-	lines := []string{styles.SplashLogo.Width(width).Render(logo)}
+	lines := []string{styles.SplashLogo.Width(width).Align(lipgloss.Left).Render(logo)}
 	if spareLines > 0 {
 		lines = append(lines, "")
 		spareLines--
 	}
-	lines = append(lines, styles.SplashTagline.Width(width).Render("Search grounded answers without leaving the terminal."))
+	lines = append(lines, styles.SplashTagline.Width(width).Align(lipgloss.Left).Render("Search grounded answers without leaving the terminal."))
 	if spareLines > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, styles.SplashHint.Width(width).Render("Start typing below or use /"))
+	lines = append(lines, styles.SplashHint.Width(width).Align(lipgloss.Left).Render("Start typing below or use /"))
 
 	content := strings.Join(lines, "\n")
 	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Bottom, content)

@@ -75,13 +75,14 @@ export default function Hero() {
         </div>
         <div className="space-y-6">
           <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
-            terminal search that knows your project, your files, and the live web.
+            terminal search that knows your project, uses attached files for context, and stays grounded in the live web.
           </h1>
           <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
             seek combines fresh web results with the repo you are already in.
-            it detects your stack, lets you attach local files with{" "}
+            it detects your stack, reads attached local files with{" "}
             <span className="font-mono text-accent-lime">@[...]</span>, saves
-            local history, and shows the search and llm timing behind every answer.
+            local history, and sends those files to your configured llm backend
+            for that query.
           </p>
         </div>
       </div>

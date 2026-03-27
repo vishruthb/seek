@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"seek/ui"
 )
 
 const (
@@ -18,6 +20,7 @@ type inputSuggestionMode int
 const (
 	inputSuggestionNone inputSuggestionMode = iota
 	inputSuggestionSlash
+	inputSuggestionSlashArg
 	inputSuggestionAttachment
 )
 
@@ -69,17 +72,27 @@ func (m *model) computeInputSuggestions() (inputSuggestionMode, string, []inputS
 	raw := m.followInput.Value()
 	trimmed := strings.TrimSpace(raw)
 
-	if strings.HasPrefix(trimmed, "/") && !strings.Contains(trimmed, " ") {
-		matches := m.filteredSlashCommands(trimmed)
-		items := make([]inputSuggestion, 0, len(matches))
-		for _, match := range matches {
-			items = append(items, inputSuggestion{
-				Title:  match.Usage,
-				Detail: match.Description,
-				Value:  match.Name,
-			})
+	if strings.HasPrefix(trimmed, "/") {
+		command, argPrefix, hasArgSlot := parseSlashInput(raw)
+		if hasArgSlot {
+			items := m.slashArgumentSuggestions(command, argPrefix)
+			if len(items) > 0 {
+				return inputSuggestionSlashArg, "slash-arg:" + command + ":" + strings.ToLower(strings.TrimSpace(argPrefix)), items
+			}
 		}
-		return inputSuggestionSlash, "slash:" + strings.ToLower(trimmed), items
+
+		if !strings.Contains(trimmed, " ") {
+			matches := m.filteredSlashCommands(trimmed)
+			items := make([]inputSuggestion, 0, len(matches))
+			for _, match := range matches {
+				items = append(items, inputSuggestion{
+					Title:  "/" + match.Name,
+					Detail: match.Description,
+					Value:  match.Name,
+				})
+			}
+			return inputSuggestionSlash, "slash:" + strings.ToLower(trimmed), items
+		}
 	}
 
 	completion, ok := activeAttachmentCompletion(raw, m.followInput.Position())
@@ -194,6 +207,13 @@ func (m *model) acceptSelectedInputSuggestion() bool {
 	case inputSuggestionSlash:
 		m.followInput.SetValue("/" + suggestion.Value + " ")
 		m.followInput.CursorEnd()
+	case inputSuggestionSlashArg:
+		command, _, hasArgSlot := parseSlashInput(m.followInput.Value())
+		if !hasArgSlot || command == "" {
+			return false
+		}
+		m.followInput.SetValue("/" + command + " " + suggestion.Value)
+		m.followInput.CursorEnd()
 	case inputSuggestionAttachment:
 		completion, ok := activeAttachmentCompletion(m.followInput.Value(), m.followInput.Position())
 		if !ok {
@@ -234,6 +254,18 @@ func (m *model) shouldAcceptSuggestionOnEnter() bool {
 
 		typed := strings.TrimPrefix(value, "/")
 		return typed == "" || !strings.EqualFold(typed, selected.Value)
+	case inputSuggestionSlashArg:
+		_, argPrefix, hasArgSlot := parseSlashInput(m.followInput.Value())
+		if !hasArgSlot {
+			return false
+		}
+
+		selected, ok := m.selectedInputSuggestion()
+		if !ok {
+			return false
+		}
+
+		return strings.TrimSpace(argPrefix) == "" || !strings.EqualFold(strings.TrimSpace(argPrefix), selected.Value)
 	default:
 		return false
 	}
@@ -249,6 +281,8 @@ func (m *model) renderInputSuggestions() string {
 	switch m.inputSuggestionMode {
 	case inputSuggestionSlash:
 		title = "Commands"
+	case inputSuggestionSlashArg:
+		title = "Values"
 	case inputSuggestionAttachment:
 		title = "Files"
 	}
@@ -263,6 +297,8 @@ func (m *model) renderInputSuggestions() string {
 		empty := "No suggestions"
 		if m.inputSuggestionMode == inputSuggestionSlash {
 			empty = "No command matches"
+		} else if m.inputSuggestionMode == inputSuggestionSlashArg {
+			empty = "No value matches"
 		} else if m.inputSuggestionMode == inputSuggestionAttachment {
 			empty = "No file matches"
 		}
@@ -272,17 +308,20 @@ func (m *model) renderInputSuggestions() string {
 		for idx := m.inputSuggestionOffset; idx < end; idx++ {
 			suggestion := m.inputSuggestions[idx]
 			style := m.styles.SourceLine
-			prefix := "  "
 			if idx == m.inputSuggestionIndex {
 				style = m.styles.SourceSelected
-				prefix = "› "
 			}
 
-			line := prefix + suggestion.Title
-			if detail := strings.TrimSpace(suggestion.Detail); detail != "" {
-				line += "  " + detail
+			if m.inputSuggestionMode == inputSuggestionSlash || m.inputSuggestionMode == inputSuggestionSlashArg {
+				body = append(body, renderSlashSuggestionRow(m.styles, style, innerWidth, idx == m.inputSuggestionIndex, suggestion.Title, suggestion.Detail))
+				continue
 			}
-			body = append(body, style.Width(innerWidth).Render(truncateSuggestionLine(line, innerWidth)))
+
+			prefix := "  "
+			if idx == m.inputSuggestionIndex {
+				prefix = "› "
+			}
+			body = append(body, style.Width(innerWidth).Render(truncateSuggestionLine(prefix+suggestion.Title, innerWidth)))
 		}
 	}
 
@@ -312,6 +351,95 @@ func (m *model) renderInputSuggestions() string {
 		Render(strings.Join(lines, "\n"))
 }
 
+func parseSlashInput(raw string) (command string, argPrefix string, hasArgSlot bool) {
+	trimmedLeft := strings.TrimLeft(raw, " \t")
+	if !strings.HasPrefix(trimmedLeft, "/") {
+		return "", "", false
+	}
+
+	withoutSlash := strings.TrimPrefix(trimmedLeft, "/")
+	fields := strings.Fields(withoutSlash)
+	if len(fields) == 0 {
+		return "", "", false
+	}
+
+	command = strings.ToLower(strings.TrimSpace(fields[0]))
+	if command == "" {
+		return "", "", false
+	}
+
+	rest := strings.TrimPrefix(withoutSlash, fields[0])
+	if rest == "" {
+		return command, "", true
+	}
+
+	trimmedRest := strings.TrimLeft(rest, " \t")
+	if trimmedRest == "" {
+		return command, "", true
+	}
+
+	if strings.Contains(trimmedRest, " ") {
+		return command, "", false
+	}
+
+	return command, trimmedRest, true
+}
+
+func (m *model) slashArgumentSuggestions(command, prefix string) []inputSuggestion {
+	if command == "" {
+		return nil
+	}
+
+	type option struct {
+		value  string
+		detail string
+	}
+
+	var options []option
+	switch strings.ToLower(strings.TrimSpace(command)) {
+	case "mode":
+		options = []option{
+			{value: "concise", detail: "tight default answer style"},
+			{value: "learning", detail: "teach progressively with intuition first"},
+			{value: "explanatory", detail: "fuller explanation with sections and tradeoffs"},
+			{value: "oneliner", detail: "one or two sentences max"},
+		}
+	case "backend":
+		options = []option{
+			{value: "ollama", detail: "local answer backend"},
+			{value: "openai", detail: "hosted OpenAI-compatible backend"},
+		}
+	case "depth":
+		options = []option{
+			{value: "basic", detail: "faster Tavily retrieval"},
+			{value: "advanced", detail: "broader Tavily retrieval"},
+		}
+	case "context":
+		options = []option{
+			{value: "on", detail: "enable project context enrichment"},
+			{value: "off", detail: "disable project context enrichment"},
+		}
+	}
+
+	if len(options) == 0 {
+		return nil
+	}
+
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	items := make([]inputSuggestion, 0, len(options))
+	for _, option := range options {
+		if prefix != "" && !strings.HasPrefix(option.value, prefix) {
+			continue
+		}
+		items = append(items, inputSuggestion{
+			Title:  option.value,
+			Detail: option.detail,
+			Value:  option.value,
+		})
+	}
+	return items
+}
+
 func truncateSuggestionLine(value string, width int) string {
 	value = strings.TrimSpace(value)
 	if width <= 0 {
@@ -328,4 +456,35 @@ func truncateSuggestionLine(value string, width int) string {
 		runes = runes[:width-1]
 	}
 	return string(runes) + "…"
+}
+
+func renderSlashSuggestionRow(styles ui.Styles, style lipgloss.Style, width int, selected bool, title, detail string) string {
+	if width <= 0 {
+		return ""
+	}
+
+	prefix := "  "
+	if selected {
+		prefix = "› "
+	}
+
+	left := prefix + strings.TrimSpace(title)
+	if strings.TrimSpace(detail) == "" || width < 32 {
+		return style.Width(width).MaxWidth(width).Render(truncateSuggestionLine(left, width))
+	}
+
+	titleWidth := min(max(12, width/4), 20)
+	separator := " │ "
+	leftWidth := max(1, titleWidth)
+	rightWidth := max(1, width-leftWidth-lipgloss.Width(separator))
+	leftCell := padSuggestionRight(left, leftWidth)
+	rightCell := styles.SourceMeta.Render(padSuggestionRight(strings.TrimSpace(detail), rightWidth))
+	row := leftCell + styles.Dimmed.Render(separator) + rightCell
+	return style.Width(width).MaxWidth(width).Render(row)
+}
+
+func padSuggestionRight(value string, width int) string {
+	value = truncateSuggestionLine(value, width)
+	padding := max(0, width-lipgloss.Width(value))
+	return value + strings.Repeat(" ", padding)
 }

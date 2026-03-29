@@ -7,11 +7,20 @@
 ╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝
 ```
 
-AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight.
+AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight. Think of `seek` to the terminal as what AI mode is to Google search.
 
-`seek` is for the moment when you're coding, need a grounded answer, and don't want to leave the terminal. It uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question.
+At a high level, `seek` uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question. It also detects the project stack (pretty naively at the moment) from your current working directory, keeps a local SQLite search history, and shows per-query search/LLM latency directly in the TUI.
 
-It also detects the project stack from your current working directory, keeps a local SQLite search history, and shows per-query search/LLM latency directly in the TUI.
+```mermaid
+flowchart LR
+    User["User (Terminal)"] -->|query| Seek["seek CLI/TUI"]
+    Seek -->|"POST /search"| Tavily["Tavily API"]
+    Tavily -->|results| Seek
+    Seek -->|"stream chat"| LLM["Ollama / OpenAI-compatible"]
+    LLM -->|streamed answer| Seek
+    Seek -->|save| SQLite["Local SQLite History"]
+    Seek -->|detect| FS["Filesystem (project context)"]
+```
 
 ![seek demo](assets/seek_demo.png)
 
@@ -87,27 +96,33 @@ Env vars override `config.toml`.
 - Search queries are sent to Tavily for retrieval.
 - Search results and any files you attach with `@[...]` are sent to your configured LLM backend for that query.
 - Use Ollama if you want the answer step to stay local, but Tavily still receives the search query.
-- Search history is stored locally at `~/.config/seek/history.db`; disable it with `history_enabled = false` or clear it with `seek --clear-history`.
+- Search history is stored locally at `~/.config/seek/history.db`. **You can disable it with `history_enabled = false` or clear it with `seek --clear-history`.**
 
 ## Usage
 
 ```bash
+seek
+```
+
+For quicker, more targeted searches:
+
+```
 seek "what is a transformer in ML?"
 seek --format learning "how does QUIC differ from TCP?"
 seek --backend ollama "compare goroutines and threads"
 seek
 ```
 
-When launched with plain `seek`, the input window opens immediately.
+When launched with just `seek`, the input window opens immediately.
 
-If `seek` detects a project manifest in your current directory or one of its parents, it tailors searches and answers to that stack automatically:
+If `seek` detects a project manifest in your current directory or one of its parents, it tailors searches and answers to that stack automatically. As an example:
 
 ```bash
 cd ~/work/my-chi-api
 seek "how to add middleware"
 ```
 
-That query is enriched with the detected stack, so Seek prefers Go/Chi results over generic framework docs.
+This query is enriched with the detected stack, so Seek prefers Go/Chi results over generic framework docs.
 
 ### Local file attachments
 
@@ -127,9 +142,9 @@ Every completed answer is saved to `~/.config/seek/history.db` by default.
 ```bash
 seek --history "tcp handshake"
 seek --recent
-seek --recent 20 --project .
+seek --recent <count> --project .
 seek --stats
-seek --open 42
+seek --open <id>
 ```
 
 Use `seek --open <id>` to reopen a saved result in the full TUI and continue with follow-up searches from there.

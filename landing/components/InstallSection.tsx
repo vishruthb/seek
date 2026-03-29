@@ -35,10 +35,8 @@ export default function InstallSection() {
       <div className="px-1">
         <div className="section-heading">install</div>
         <p className="section-copy mt-3">
-          install seek, run the setup wizard, paste your keys, and start from
-          the repo you are already in. seek can detect project context, attach
-          local files, reopen saved sessions, and switch between local and
-          hosted backends.
+          one command to install. one command to configure. then search from
+          any repo.
         </p>
       </div>
 
@@ -54,10 +52,9 @@ export default function InstallSection() {
             install seek in one line
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-text-secondary sm:text-base">
-            the installer pulls the latest GitHub release. once it lands, run{" "}
-            <code className="font-mono text-accent-lime">seek --version</code>{" "}
-            and <code className="font-mono text-accent-lime">seek --setup</code>{" "}
-            to get the full stack-aware flow working.
+            the installer pulls the latest release from GitHub. run{" "}
+            <code className="font-mono text-accent-lime">seek --setup</code>{" "}
+            to configure your keys and start searching.
           </p>
           <div className="w-full">
             <CodeBlock code={installCommand} label="curl | sh" pulseOnView />
@@ -108,21 +105,20 @@ export default function InstallSection() {
               pick your backend
             </h3>
             <p className="mt-2 text-sm leading-7 text-text-secondary">
-              use{" "}
               <a
                 href="https://console.groq.com"
                 className="text-accent-mint underline decoration-accent-mint-dim underline-offset-4"
               >
                 groq
               </a>{" "}
-              for speed, or{" "}
+              for speed,{" "}
               <a
                 href="https://ollama.com"
                 className="text-accent-mint underline decoration-accent-mint-dim underline-offset-4"
               >
                 ollama
               </a>{" "}
-              when you want the answer step to stay on your machine.
+              to keep answers on your machine, or any OpenAI-compatible API.
             </p>
           </div>
           <div className="rounded-2xl border border-border-subtle bg-bg-secondary/90 p-5">
@@ -132,10 +128,9 @@ export default function InstallSection() {
             </h3>
             <p className="mt-2 text-sm leading-7 text-text-secondary">
               run <code className="font-mono text-accent-lime">seek --setup</code>,
-              then try{" "}
-              <code className="font-mono text-accent-lime">seek "review @[main.go]"</code>{" "}
-              and reopen it later with{" "}
-              <code className="font-mono text-accent-lime">seek --recent</code>.
+              then{" "}
+              <code className="font-mono text-accent-lime">seek &quot;review @[main.go]&quot;</code>{" "}
+              from any repo.
             </p>
           </div>
         </div>

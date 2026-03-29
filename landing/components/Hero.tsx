@@ -75,14 +75,14 @@ export default function Hero() {
         </div>
         <div className="space-y-6">
           <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
-            terminal search that knows your project, uses attached files for context, and stays grounded in the live web.
+            search the web from your terminal with your project as context.
           </h1>
           <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
-            seek combines fresh web results with the repo you are already in.
-            it detects your stack, reads attached local files with{" "}
-            <span className="font-mono text-accent-lime">@[...]</span>, saves
-            local history, and sends those files to your configured llm backend
-            for that query.
+            seek detects your stack, attaches local files with{" "}
+            <span className="font-mono text-accent-lime">@[file]</span>,
+            pulls live web results, and streams a cited answer from the LLM
+            you choose. one binary, fully keyboard-driven, all history saved
+            locally.
           </p>
         </div>
       </div>
@@ -97,8 +97,8 @@ export default function Hero() {
         <div className="font-mono text-sm text-accent-mint">quick start</div>
         <p className="mt-3 text-sm leading-7 text-text-secondary">
           install seek, run <span className="font-mono text-accent-lime">seek --setup</span>,
-          then try <span className="font-mono text-accent-lime">seek "review @[main.go]"</span>{" "}
-          from a repo and keep iterating from the terminal.
+          then <span className="font-mono text-accent-lime">seek &quot;review @[main.go]&quot;</span>{" "}
+          from any repo.
         </p>
       </div>
     </motion.div>

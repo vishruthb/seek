@@ -206,7 +206,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-10% 0px" }}
         transition={{ duration: 0.22, ease: "linear" }}
-        className={`scanline relative flex h-full flex-col overflow-hidden rounded-[1.6rem] border ${
+        className={`scanline relative flex w-full flex-col overflow-hidden rounded-[1.6rem] border ${
           focused ? "border-border-active shadow-terminal" : "border-border-subtle shadow-glow"
         } bg-bg-terminal`}
       >
@@ -244,7 +244,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
           <div className="w-[3.75rem]" />
         </div>
 
-        <div className="grid flex-1 content-start gap-0 px-4 py-5 font-mono text-[13px] sm:px-6 sm:text-[14px]">
+        <div className="grid content-start gap-0 px-4 py-5 font-mono text-[13px] sm:px-6 sm:text-[14px]">
           {lines.slice(0, visibleCount).map((line) => (
             <div key={line.key}>{line.node}</div>
           ))}

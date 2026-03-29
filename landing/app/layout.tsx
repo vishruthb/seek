@@ -23,10 +23,6 @@ export const metadata: Metadata = {
     description: "Project context. @[file] attachments. Local history. Zero browser tab drift.",
     type: "website",
     url: "https://seekcli.vercel.app/",
-    images: ["/og-image.png"],
-  },
-  twitter: {
-    card: "summary_large_image",
   },
 };
 

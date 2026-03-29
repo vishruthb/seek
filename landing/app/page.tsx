@@ -17,9 +17,9 @@ export default function Page() {
     <main className="terminal-grid h-screen snap-y snap-mandatory overflow-x-hidden overflow-y-auto">
       <section className={centeredSectionClass}>
         <div className="section-shell w-full overflow-visible rounded-[2.2rem] px-5 py-6 sm:px-8 sm:py-8 lg:min-h-[82vh] lg:overflow-hidden lg:px-10 lg:py-10 xl:px-12">
-          <div className="grid w-full gap-8 lg:grid-cols-[minmax(360px,0.8fr)_minmax(620px,1.2fr)] lg:items-stretch xl:gap-12">
+          <div className="grid w-full gap-8 lg:grid-cols-[minmax(360px,0.8fr)_minmax(620px,1.2fr)] lg:items-center xl:gap-12">
             <Hero />
-            <div className="hidden lg:flex lg:h-full">
+            <div className="hidden lg:flex">
               <TerminalDemo compact />
             </div>
           </div>

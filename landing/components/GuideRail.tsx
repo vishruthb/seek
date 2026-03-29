@@ -6,17 +6,17 @@ const sections = [
   {
     id: "features",
     title: "features",
-    summary: "project context, local files, local history, and keyboard-first reading.",
+    summary: "project context, file attachments, local history, keyboard-first navigation.",
   },
   {
     id: "how-it-works",
     title: "how it works",
-    summary: "repo context first, web context second, then your llm answers against both.",
+    summary: "repo context shapes the query. web results ground the answer.",
   },
   {
     id: "keybindings",
     title: "keybindings",
-    summary: "picker navigation, slash commands, sources, and follow-ups from the keyboard.",
+    summary: "vim-style navigation, slash commands, and inline follow-ups.",
   },
 ] as const;
 
@@ -24,32 +24,32 @@ const featureItems = [
   {
     icon: "ctx",
     title: "project-aware by default",
-    text: "seek detects the language and framework in the repo you launched it from, then biases search and answers toward that stack.",
+    text: "seek reads your repo to detect the language, framework, and dependencies, then biases every search toward your stack.",
   },
   {
     icon: "@[ ]",
     title: "attach local files inline",
-    text: "type @[file] in the input to attach local code context. seek suggests files in the current project as you type, then sends the selected file contents to your configured llm backend for that query.",
+    text: "type @[file] to attach code from your project. seek autocompletes paths and sends file contents alongside search results to your LLM.",
   },
   {
     icon: "db",
-    title: "history that reopens cleanly",
-    text: "every completed search is saved locally. search it, reopen it in the tui, and continue from the original project directory.",
+    title: "persistent local history",
+    text: "every search is saved locally with full context. search your history, reopen past sessions, and pick up where you left off.",
   },
   {
     icon: "ms",
     title: "visible latency",
-    text: "the status bar shows total response time plus the split between Tavily search time and the llm stream.",
+    text: "the status bar breaks down response time into search and LLM components so you always know where time went.",
   },
   {
     icon: "jk",
-    title: "picker-first controls",
-    text: "arrow keys work everywhere they should, j/k can drive suggestion lists, and Enter accepts the current slash or file suggestion.",
+    title: "keyboard-first controls",
+    text: "j/k navigation, slash command autocomplete, and file path suggestions. everything responds to the keyboard.",
   },
   {
     icon: "llm",
     title: "local or hosted backends",
-    text: "keep the answer step local with Ollama or route through a fast OpenAI-compatible provider when you care more about throughput.",
+    text: "run answers locally with Ollama or route through Groq, OpenRouter, or any OpenAI-compatible API. switch mid-session with /backend.",
   },
 ];
 
@@ -57,17 +57,17 @@ const howSteps = [
   {
     label: "01",
     title: 'seek "review @[server.go]"',
-    body: "you ask from the repo you are already in, and seek can pull both project context and local file context into the same request.",
+    body: "ask from the repo you are already in. seek pulls project context and local file contents into the same request.",
   },
   {
     label: "02",
     title: "repo context + tavily search",
-    body: "seek biases the search toward your stack, gathers fresh pages, and keeps the sources separate from the answer pane.",
+    body: "seek biases the query toward your stack, fetches fresh pages, and keeps numbered sources separate from the answer.",
   },
   {
     label: "03",
     title: "your llm streams the answer",
-    body: "the chosen backend reads the search results and attached files, then streams a cited answer while seek tracks timings and saves the session locally.",
+    body: "your chosen backend reads the search results and attached files, streams a cited answer, and seek saves the session locally.",
   },
 ];
 
@@ -186,9 +186,8 @@ export default function GuideRail() {
         <div className="max-w-2xl px-1 lg:hidden">
           <div className="section-heading">inside seek</div>
           <p className="section-copy mt-3">
-            one flow, three parts: what seek adds around the search, how the
-            stack-aware pipeline works, and the keys that keep it fast once your
-            hands are already on the keyboard.
+            what seek adds, how the pipeline works, and the keybindings that
+            keep it fast.
           </p>
         </div>
 
@@ -225,9 +224,8 @@ export default function GuideRail() {
             <div className="max-w-2xl">
               <div className="section-heading">features</div>
               <p className="section-copy mt-3">
-                seek is built to cut context drift: project-aware search, inline
-                attachments, searchable local history, and enough interface
-                polish to stay in the terminal.
+                everything you need to stay in the terminal and stop
+                context-switching to a browser.
               </p>
             </div>
             <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -264,9 +262,9 @@ export default function GuideRail() {
             <div className="max-w-2xl">
               <div className="section-heading">how it works</div>
               <p className="section-copy mt-3">
-                seek separates retrieval from synthesis. it detects the repo you
-                are in, gathers live web results, then lets your chosen model
-                answer against both the search results and any attached local files.
+                seek separates search from synthesis. your repo context shapes
+                the query, Tavily fetches live results, and your LLM answers
+                against both.
               </p>
             </div>
             <div className="mt-8 flex flex-col gap-5 xl:flex-row xl:items-stretch">

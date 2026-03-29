@@ -8,19 +8,19 @@ import (
 )
 
 const (
-	ColorAccent    = "#d9f99d"
-	ColorDim       = "#9cb89e"
-	ColorText      = "#f3ffe8"
-	ColorBorder    = "#6c8a69"
-	ColorHighlight = "#b7e4c7"
-	ColorError     = "#ffcad4"
-	ColorSuccess   = "#d9f99d"
-	ColorWarning   = "#ffe8a3"
-	ColorCodeBg    = "#142018"
-	ColorSourceSel = "#293a2b"
-	ColorPanel     = "#1b241d"
-	ColorBg        = "#111713"
-	ColorInk       = "#162016"
+	colorAccent    = "#d9f99d"
+	colorDim       = "#9cb89e"
+	colorText      = "#f3ffe8"
+	colorBorder    = "#6c8a69"
+	colorHighlight = "#b7e4c7"
+	colorError     = "#ffcad4"
+	colorSuccess   = "#d9f99d"
+	colorWarning   = "#ffe8a3"
+	colorCodeBg    = "#142018"
+	colorSourceSel = "#293a2b"
+	colorPanel     = "#1b241d"
+	colorBg        = "#111713"
+	colorInk       = "#162016"
 )
 
 type Palette struct {
@@ -369,19 +369,19 @@ func paletteFor(name string) Palette {
 		fallthrough
 	default:
 		return Palette{
-			Background: ColorBg,
-			Panel:      ColorPanel,
-			Accent:     ColorAccent,
-			Dim:        ColorDim,
-			Text:       ColorText,
-			Border:     ColorBorder,
-			Highlight:  ColorHighlight,
-			Error:      ColorError,
-			Success:    ColorSuccess,
-			Warning:    ColorWarning,
-			CodeBg:     ColorCodeBg,
-			SourceSel:  ColorSourceSel,
-			Ink:        ColorInk,
+			Background: colorBg,
+			Panel:      colorPanel,
+			Accent:     colorAccent,
+			Dim:        colorDim,
+			Text:       colorText,
+			Border:     colorBorder,
+			Highlight:  colorHighlight,
+			Error:      colorError,
+			Success:    colorSuccess,
+			Warning:    colorWarning,
+			CodeBg:     colorCodeBg,
+			SourceSel:  colorSourceSel,
+			Ink:        colorInk,
 		}
 	}
 }

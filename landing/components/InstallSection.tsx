@@ -111,7 +111,9 @@ export default function InstallSection() {
               >
                 groq
               </a>{" "}
-              for speed,{" "}
+              for speed (choose{" "}
+              <code className="font-mono text-accent-lime">openai</code>{" "}
+              in setup),{" "}
               <a
                 href="https://ollama.com"
                 className="text-accent-mint underline decoration-accent-mint-dim underline-offset-4"
@@ -129,7 +131,7 @@ export default function InstallSection() {
             <p className="mt-2 text-sm leading-7 text-text-secondary">
               run <code className="font-mono text-accent-lime">seek --setup</code>,
               then{" "}
-              <code className="font-mono text-accent-lime">seek &quot;review @[main.go]&quot;</code>{" "}
+              <code className="font-mono text-accent-lime">seek &quot;explain @[main.go]&quot;</code>{" "}
               from any repo.
             </p>
           </div>

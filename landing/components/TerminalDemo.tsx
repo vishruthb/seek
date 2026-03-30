@@ -300,7 +300,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
                   onChange={(event) => setQuery(event.target.value)}
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
-                  placeholder='Try: review @[main.go] or /history chi'
+                  placeholder='Try: explain @[main.go] or /history chi'
                   className="w-full bg-transparent font-mono text-sm text-text-bright outline-none placeholder:text-text-secondary"
                 />
                 <span className="font-mono text-xs text-accent-mint">⏎</span>

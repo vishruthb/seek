@@ -56,7 +56,7 @@ const featureItems = [
 const howSteps = [
   {
     label: "01",
-    title: 'seek "review @[server.go]"',
+    title: 'seek "explain @[main.go]"',
     body: "ask from the repo you are already in. seek pulls project context and local file contents into the same request.",
   },
   {

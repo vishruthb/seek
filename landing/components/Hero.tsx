@@ -97,7 +97,7 @@ export default function Hero() {
         <div className="font-mono text-sm text-accent-mint">quick start</div>
         <p className="mt-3 text-sm leading-7 text-text-secondary">
           install seek, run <span className="font-mono text-accent-lime">seek --setup</span>,
-          then <span className="font-mono text-accent-lime">seek &quot;review @[main.go]&quot;</span>{" "}
+          then <span className="font-mono text-accent-lime">seek &quot;explain @[main.go]&quot;</span>{" "}
           from any repo.
         </p>
       </div>

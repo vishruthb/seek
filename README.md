@@ -11,7 +11,7 @@ AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight
 
 `seek` detects your project stack from the current directory (go.mod, package.json, Cargo.toml, etc.) and tailors searches and answers to your specific frameworks and dependencies. It uses Tavily for web search and either Ollama or any OpenAI-compatible backend for answer generation. All searches are saved to a local SQLite history with full-text search, and per-query latency is shown directly in the TUI.
 
-![seek demo](assets/seek_demo.png)
+![seek demo](assets/seek_demo.gif)
 
 ## Install
 

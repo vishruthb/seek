@@ -7,20 +7,9 @@
 ╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝
 ```
 
-AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight. Think of `seek` to the terminal as what AI mode is to Google search.
+AI-powered web search from your terminal. Fast, keyboard-driven, and lightweight.
 
-At a high level, `seek` uses Tavily for quick web search and either Ollama or an OpenAI-compatible backend to generate summaries to answer your question. It also detects the project stack (pretty naively at the moment) from your current working directory, keeps a local SQLite search history, and shows per-query search/LLM latency directly in the TUI.
-
-```mermaid
-flowchart LR
-    User["User (Terminal)"] -->|query| Seek["seek CLI/TUI"]
-    Seek -->|"POST /search"| Tavily["Tavily API"]
-    Tavily -->|results| Seek
-    Seek -->|"stream chat"| LLM["Ollama / OpenAI-compatible"]
-    LLM -->|streamed answer| Seek
-    Seek -->|save| SQLite["Local SQLite History"]
-    Seek -->|detect| FS["Filesystem (project context)"]
-```
+`seek` detects your project stack from the current directory (go.mod, package.json, Cargo.toml, etc.) and tailors searches and answers to your specific frameworks and dependencies. It uses Tavily for web search and either Ollama or any OpenAI-compatible backend for answer generation. All searches are saved to a local SQLite history with full-text search, and per-query latency is shown directly in the TUI.
 
 ![seek demo](assets/seek_demo.png)
 
@@ -68,8 +57,7 @@ seek --config
 You need:
 
 1. A Tavily API key for search
-2. One answer backend
-   `ollama` locally, or `openai` for Groq / OpenRouter / Together / OpenAI-compatible APIs
+2. One answer backend - can use `ollama` locally, or choose `openai` if using Groq, OpenRouter, Together, or other OpenAI-compatible APIs in the `seek --setup` wizard
 
 ### Option A: Ollama
 

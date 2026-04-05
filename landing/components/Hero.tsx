@@ -7,7 +7,7 @@ import CodeBlock from "@/components/ui/CodeBlock";
 const installCommand = "curl -fsSL https://seekcli.vercel.app/install.sh | sh";
 const githubURL = "https://github.com/vishruthb/seek";
 
-function GitHubIcon() {
+export function GitHubIcon() {
   return (
     <svg
       aria-hidden="true"
@@ -20,7 +20,7 @@ function GitHubIcon() {
   );
 }
 
-function SeekWordmark() {
+export function SeekWordmark() {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border-subtle bg-bg-terminal/80 shadow-glow">
@@ -55,39 +55,38 @@ function SeekWordmark() {
 export default function Hero() {
   return (
     <motion.div
-      className="relative flex min-w-0 w-full flex-col gap-10 lg:h-full lg:max-w-[38rem] lg:justify-between lg:gap-14"
+      className="relative flex min-w-0 w-full flex-col gap-8 sm:gap-10 lg:min-h-[35rem] lg:max-w-[40rem] lg:justify-between lg:gap-0 2xl:min-h-[38rem] 2xl:max-w-[44rem]"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
     >
-      <div className="space-y-10 lg:space-y-12">
-        <div className="flex w-full min-w-0 items-center justify-between gap-4">
-          <SeekWordmark />
-          <a
-            href={githubURL}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="seek on github"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-subtle text-text-primary transition-colors hover:border-accent-mint hover:text-accent-mint"
-          >
-            <GitHubIcon />
-          </a>
-        </div>
-        <div className="space-y-6">
-          <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
-            search the web from your terminal with your project as context.
-          </h1>
-          <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
-            seek detects your stack, attaches local files with{" "}
-            <span className="font-mono text-accent-lime">@[file]</span>,
-            pulls live web results, and streams a cited answer from the LLM
-            you choose. one binary, fully keyboard-driven, all history saved
-            locally.
-          </p>
-        </div>
+      <div className="flex w-full min-w-0 items-center justify-between gap-4 lg:-translate-y-1 2xl:-translate-y-2">
+        <SeekWordmark />
+        <a
+          href={githubURL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="seek on github"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-subtle text-text-primary transition-colors hover:border-accent-mint hover:text-accent-mint lg:hidden"
+        >
+          <GitHubIcon />
+        </a>
       </div>
 
-      <div className="max-w-2xl min-w-0 pt-2 sm:pt-4 lg:mt-auto lg:pt-4">
+      <div className="space-y-4 sm:space-y-5 lg:space-y-4">
+        <h1 className="max-w-2xl text-3xl font-medium tracking-tight text-text-bright sm:text-5xl xl:text-6xl">
+          search the web from your terminal with your project as context.
+        </h1>
+        <p className="max-w-xl text-base leading-7 text-text-secondary sm:text-lg">
+          seek detects your stack, attaches local files with{" "}
+          <span className="font-mono text-accent-lime">@[file]</span>,
+          pulls live web results, and streams a cited answer from the LLM
+          you choose. one binary, fully keyboard-driven, all history saved
+          locally.
+        </p>
+      </div>
+
+      <div className="max-w-2xl min-w-0 pt-2 sm:pt-4 lg:pt-0">
         <div className="max-w-2xl min-w-0">
           <CodeBlock code={installCommand} label="install" />
         </div>

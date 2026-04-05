@@ -60,6 +60,9 @@ input {
 
 .terminal-grid {
   position: relative;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(198, 200, 204, 0.72) rgba(18, 18, 26, 0.95);
 }
 
 .terminal-grid::before {
@@ -72,6 +75,24 @@ input {
     linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.95), transparent 92%);
+}
+
+.terminal-grid::-webkit-scrollbar {
+  width: 12px;
+}
+
+.terminal-grid::-webkit-scrollbar-track {
+  background: rgba(18, 18, 26, 0.96);
+}
+
+.terminal-grid::-webkit-scrollbar-thumb {
+  border: 3px solid rgba(18, 18, 26, 0.96);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(210, 213, 218, 0.82), rgba(168, 172, 179, 0.9));
+}
+
+.terminal-grid::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(226, 229, 234, 0.94), rgba(182, 186, 193, 0.94));
 }
 
 .section-shell {
@@ -113,22 +134,4 @@ input {
   background: linear-gradient(180deg, transparent, rgba(166, 227, 161, 0.06), transparent);
   transform: translateY(-100%);
   animation: scan 11s linear infinite;
-}
-
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(166, 227, 161, 0.3) transparent;
-}
-
-.scrollbar-thin::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(166, 227, 161, 0.28);
-}
-
-.scrollbar-thin::-webkit-scrollbar-track {
-  background: transparent;
 }

@@ -191,24 +191,26 @@ export default function GuideRail() {
           </p>
         </div>
 
-        <div className="sticky top-3 z-20 mt-6 -mx-1 flex gap-3 overflow-x-auto px-1 pb-3 lg:hidden">
-          {sections.map((section) => {
-            const isActive = section.id === active;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => scrollToSection(section.id)}
-                className={`shrink-0 rounded-full border px-4 py-2 font-mono text-sm transition-all duration-200 ${
-                  isActive
-                    ? "border-border-active bg-accent-glow text-text-bright shadow-glow"
-                    : "border-border-subtle bg-bg-secondary/90 text-text-secondary"
-                }`}
-              >
-                {section.title}
-              </button>
-            );
-          })}
+        <div className="sticky top-3 z-20 mt-6 -mx-1 px-1 pb-3 lg:hidden">
+          <div className="flex gap-3 overflow-x-auto rounded-[1.2rem] border border-border-subtle bg-bg-secondary/95 px-3 py-3 shadow-glow">
+            {sections.map((section) => {
+              const isActive = section.id === active;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => scrollToSection(section.id)}
+                  className={`shrink-0 rounded-full border px-4 py-2 font-mono text-sm transition-all duration-200 ${
+                    isActive
+                      ? "border-border-active bg-accent-glow text-text-bright shadow-glow"
+                      : "border-border-subtle bg-bg-secondary/90 text-text-secondary"
+                  }`}
+                >
+                  {section.title}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="space-y-14 pb-8 sm:space-y-16 lg:space-y-[4.5rem] lg:pb-36 xl:space-y-20 xl:pb-44">

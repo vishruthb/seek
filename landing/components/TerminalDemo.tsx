@@ -7,6 +7,13 @@ import { motion, useInView } from "framer-motion";
 const exampleQuery = "add chi middleware around @[internal/http/server.go]";
 const borderEase = [0.32, 0, 0.18, 1] as const;
 const focusTransition = { duration: 0.28, ease: borderEase } as const;
+const accentBorder = "rgba(var(--accent-rgb), 0.9)";
+const accentBorderSoft = "rgba(var(--accent-rgb), 0.85)";
+const accentInsetStrong = "0 0 0 1px rgba(var(--accent-rgb), 0.12) inset, 0 0 28px rgba(var(--accent-rgb), 0.16)";
+const accentInsetSoft = "0 0 0 1px rgba(var(--accent-rgb), 0.03) inset, 0 0 0 rgba(var(--accent-rgb), 0)";
+const accentGlow = "linear-gradient(180deg, rgba(var(--accent-rgb), 0.18), rgba(var(--accent-rgb), 0.04) 34%, rgba(var(--accent-rgb), 0))";
+const accentInputGlow = "0 0 0 1px rgba(var(--accent-rgb), 0.18), 0 0 22px rgba(var(--accent-rgb), 0.08)";
+const panelBorder = "rgba(var(--panel-rgb), 1)";
 
 type DemoLine = {
   key: string;
@@ -217,8 +224,8 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
               opacity: focused ? 0.95 : 0.18,
               scale: focused ? 1 : 0.992,
               boxShadow: focused
-                ? "0 0 0 1px rgba(166, 227, 161, 0.12) inset, 0 0 28px rgba(166, 227, 161, 0.16)"
-                : "0 0 0 1px rgba(166, 227, 161, 0.03) inset, 0 0 0 rgba(166, 227, 161, 0)",
+                ? accentInsetStrong
+                : accentInsetSoft,
             }}
             transition={focusTransition}
           />
@@ -226,8 +233,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
             className="absolute inset-[1px] rounded-[1.52rem]"
             animate={{
               opacity: focused ? 0.12 : 0,
-              background:
-                "linear-gradient(180deg, rgba(166, 227, 161, 0.18), rgba(166, 227, 161, 0.04) 34%, rgba(166, 227, 161, 0))",
+              background: accentGlow,
             }}
             transition={focusTransition}
           />
@@ -260,7 +266,7 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
           onSubmit={handleSubmit}
           className="border-t px-4 py-3 sm:px-6"
           animate={{
-            borderColor: focused ? "rgba(166, 227, 161, 0.85)" : "rgba(42, 42, 58, 1)",
+            borderColor: focused ? accentBorderSoft : panelBorder,
           }}
           transition={focusTransition}
         >
@@ -279,10 +285,10 @@ export default function TerminalDemo({ compact = false }: TerminalDemoProps) {
           <motion.div
             className="flex items-center gap-3 rounded-xl border bg-bg-secondary/95 px-3 py-3"
             animate={{
-              borderColor: focused ? "rgba(166, 227, 161, 0.9)" : "rgba(42, 42, 58, 1)",
+              borderColor: focused ? accentBorder : panelBorder,
               boxShadow: focused
-                ? "0 0 0 1px rgba(166, 227, 161, 0.18), 0 0 22px rgba(166, 227, 161, 0.08)"
-                : "0 0 0 0 rgba(166, 227, 161, 0)",
+                ? accentInputGlow
+                : "0 0 0 0 rgba(var(--accent-rgb), 0)",
             }}
             transition={focusTransition}
           >

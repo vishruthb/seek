@@ -34,8 +34,8 @@ const config: Config = {
         error: "var(--color-error)",
       },
       boxShadow: {
-        terminal: "0 0 0 1px var(--border-subtle), 0 18px 60px rgba(0, 0, 0, 0.45), 0 0 40px var(--accent-mint-glow)",
-        glow: "0 0 0 1px var(--accent-mint-dim), 0 0 0 1px inset rgba(166, 227, 161, 0.08), 0 0 20px var(--accent-mint-glow)",
+        terminal: "var(--shadow-terminal)",
+        glow: "var(--shadow-glow)",
       },
       fontFamily: {
         mono: [

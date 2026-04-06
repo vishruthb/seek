@@ -40,6 +40,9 @@ func TestRunSetupWizardWritesConfigFile(t *testing.T) {
 	if cfg.SearchDepth != "advanced" || cfg.MaxResults != 8 || cfg.OutputFormat != "learning" {
 		t.Fatalf("unexpected search config: depth=%q results=%d format=%q", cfg.SearchDepth, cfg.MaxResults, cfg.OutputFormat)
 	}
+	if cfg.Theme != "auto" {
+		t.Fatalf("expected setup to keep auto theme by default, got %q", cfg.Theme)
+	}
 	if !strings.Contains(output.String(), "wrote config to") {
 		t.Fatalf("expected success output, got %q", output.String())
 	}

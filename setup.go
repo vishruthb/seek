@@ -95,11 +95,8 @@ func runSetupWizard(in io.Reader, out io.Writer, path string) error {
 
 	cfg.normalize()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
-	}
-	if err := os.WriteFile(path, []byte(renderConfigTOML(cfg)), 0o600); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	if err := writeConfigFile(path, cfg); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(out)
@@ -244,4 +241,15 @@ print_on_exit = %t
 browser = %q
 max_turns = %d
 `, cfg.TavilyAPIKey, cfg.SearchDepth, cfg.MaxResults, cfg.LLMBackend, cfg.OllamaURL, cfg.OllamaModel, cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel, cfg.OutputFormat, cfg.Theme, cfg.PrintOnExit, cfg.Browser, cfg.MaxTurns)
+}
+
+func writeConfigFile(path string, cfg Config) error {
+	cfg.normalize()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(renderConfigTOML(cfg)), 0o600); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }

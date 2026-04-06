@@ -128,16 +128,30 @@ func historyStatsMarkdown(stats *historypkg.HistoryStats) string {
 }
 
 func sessionStatusMarkdown(cfg Config, providerName, stack string) string {
+	themeLine := themeStatusLine(cfg.Theme)
 	return fmt.Sprintf(
-		"## Session\n\n- Backend: %s\n- Provider: %s\n- Model: %s\n- Mode: %s\n- Search depth: %s\n- Max results: %d\n- Project context: %s\n",
+		"## Session\n\n- Backend: %s\n- Provider: %s\n- Model: %s\n- Mode: %s\n- Theme: %s\n- Search depth: %s\n- Max results: %d\n- Project context: %s\n",
 		fallbackString(cfg.LLMBackend, "unknown"),
 		fallbackString(providerName, "unknown"),
 		fallbackString(activeModel(cfg), "unknown"),
 		fallbackString(cfg.OutputFormat, "concise"),
+		themeLine,
 		fallbackString(cfg.SearchDepth, "basic"),
 		cfg.MaxResults,
 		fallbackString(stack, "off"),
 	)
+}
+
+func themeStatusLine(configured string) string {
+	configured = strings.TrimSpace(strings.ToLower(configured))
+	if configured == "" {
+		configured = defaultTheme
+	}
+	resolved := resolveThemePreference(configured)
+	if configured == "auto" {
+		return fmt.Sprintf("auto (resolved: %s)", resolved)
+	}
+	return configured
 }
 
 func historyClearMarkdown(deleted int64) string {

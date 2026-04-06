@@ -273,6 +273,86 @@ func TestExitSlashCommandReturnsQuit(t *testing.T) {
 	}
 }
 
+func TestToggleSlashCommandSwitchesThemeAndPersistsConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := DefaultConfig()
+	cfg.Theme = "dark"
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 120
+	m.height = 36
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/toggle")
+	if m.config.Theme != "light" {
+		t.Fatalf("expected theme to toggle to light, got %q", m.config.Theme)
+	}
+	if m.styles.Name != "light" {
+		t.Fatalf("expected active styles to switch to light, got %q", m.styles.Name)
+	}
+
+	configBody, err := os.ReadFile(ConfigPath())
+	if err != nil {
+		t.Fatalf("read config after toggle: %v", err)
+	}
+	if !strings.Contains(string(configBody), "theme = \"light\"") {
+		t.Fatalf("expected persisted config to contain light theme, got %q", string(configBody))
+	}
+
+	_ = m.executeSlashCommand("/toggle")
+	if m.config.Theme != "dark" {
+		t.Fatalf("expected theme to toggle back to dark, got %q", m.config.Theme)
+	}
+	if m.styles.Name != "pastel" {
+		t.Fatalf("expected dark toggle to resolve to pastel styles, got %q", m.styles.Name)
+	}
+}
+
+func TestSearchWithinResponseUpdatesLiveAndMarksMatches(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 120
+	m.height = 36
+	m.turns = []Turn{{
+		Query:    "what is a transformer",
+		Response: "A transformer uses attention.\n\nAttention heads track token relationships.",
+	}}
+	m.currentTurn = 0
+	m.state = StateViewing
+	m.applyLayout()
+	m.refreshViewport(false)
+
+	_ = m.handleViewingKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if m.state != StateSearchInput {
+		t.Fatalf("expected / to open search input, got %v", m.state)
+	}
+
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	_ = m.handleSearchKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
+	if m.searchQuery != "attention" {
+		t.Fatalf("expected live search query to update, got %q", m.searchQuery)
+	}
+	if len(m.searchMatches) == 0 {
+		t.Fatalf("expected live search to find matches")
+	}
+
+	highlighted := m.applySearchHighlights(m.baseRendered)
+	if !strings.Contains(highlighted, m.styles.SearchCurrent.Render("attention")) &&
+		!strings.Contains(highlighted, m.styles.SearchCurrent.Render("Attention")) {
+		t.Fatalf("expected inline highlight to appear, got %q", highlighted)
+	}
+}
+
 func TestSanitizeTerminalTextStripsEscapeSequences(t *testing.T) {
 	value := "safe\x1b]52;c;bad\a text\x1b[31m!\x1b[0m"
 	got := sanitizeTerminalText(value)
@@ -532,8 +612,9 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	if strings.Contains(m.composeTranscript(), "## Query:") || strings.Contains(m.composeTranscript(), "## Follow-up:") {
 		t.Fatalf("expected transcript to omit query headings, got %q", m.composeTranscript())
 	}
-	if !strings.Contains(m.View(), "seek │ \"what is a transformer\"") {
-		t.Fatalf("expected active session header to stay visible, got %q", m.View())
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "seek") || !strings.Contains(view, "\"what is a transformer\"") {
+		t.Fatalf("expected active session header to stay visible, got %q", view)
 	}
 
 	driveQueryCycle(t, m, "what about attention heads", true)

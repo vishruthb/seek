@@ -104,7 +104,10 @@ func LoadTheme(name string) Styles {
 			Foreground(lipgloss.Color(palette.Ink)).
 			Bold(true),
 		HeaderQuery: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#27402b")),
+			Foreground(lipgloss.Color(palette.Text)).
+			Background(lipgloss.Color(palette.Panel)).
+			Bold(true).
+			Padding(0, 1),
 		HeaderCounter: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Ink)).
 			Bold(true),
@@ -137,7 +140,7 @@ func LoadTheme(name string) Styles {
 		StatusHint: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Ink)),
 		StatusMeta: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#2f4a32")),
+			Foreground(lipgloss.Color(palette.Ink)),
 		InputBar: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Text)).
 			Border(lipgloss.NormalBorder(), true, false, false, false).
@@ -162,7 +165,7 @@ func LoadTheme(name string) Styles {
 		Divider: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(palette.Border)),
 		SearchMatch: lipgloss.NewStyle().
-			Background(lipgloss.Color("#2c3d2e")).
+			Background(lipgloss.Color(palette.SourceSel)).
 			Foreground(lipgloss.Color(palette.Text)),
 		SearchCurrent: lipgloss.NewStyle().
 			Background(lipgloss.Color(palette.Accent)).
@@ -319,19 +322,19 @@ func paletteFor(name string) Palette {
 	switch name {
 	case "light":
 		return Palette{
-			Background: "#f7fff1",
-			Panel:      "#fbfff8",
-			Accent:     "#84cc16",
-			Dim:        "#6e866f",
-			Text:       "#1d2b1f",
-			Border:     "#b9d2b2",
-			Highlight:  "#d9f99d",
+			Background: "#faf7ff",
+			Panel:      "#f4efff",
+			Accent:     "#826AED",
+			Dim:        "#6f6794",
+			Text:       "#251c3d",
+			Border:     "#d4c8f6",
+			Highlight:  "#c4b5fd",
 			Error:      "#f28482",
-			Success:    "#84cc16",
+			Success:    "#4f9d69",
 			Warning:    "#f7c873",
-			CodeBg:     "#eef9e7",
-			SourceSel:  "#ecf7dc",
-			Ink:        "#1d2b1f",
+			CodeBg:     "#ede6ff",
+			SourceSel:  "#e6ddff",
+			Ink:        "#1f1734",
 		}
 	case "dracula":
 		return Palette{

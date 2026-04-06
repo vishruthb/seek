@@ -79,6 +79,12 @@ export SEEK_OPENAI_MODEL="llama-3.3-70b-versatile"
 
 Env vars override `config.toml`.
 
+Theme defaults to `auto`, which follows your terminal/system appearance when Seek can detect it. You can also override it explicitly:
+
+```bash
+export SEEK_THEME="light"
+```
+
 ## Privacy
 
 - Search queries are sent to Tavily for retrieval.
@@ -149,6 +155,7 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 /model llama-3.3-70b-versatile
 /depth advanced
 /results 8
+/toggle
 /context
 /context off
 /history tcp

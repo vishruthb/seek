@@ -178,7 +178,7 @@ func NewModel(cfg Config, initialQuery string, searchProvider searchpkg.SearchPr
 }
 
 func NewModelWithOptions(cfg Config, initialQuery string, searchProvider searchpkg.SearchProvider, llmProvider llmpkg.LLMProvider, options ModelOptions) *model {
-	styles := ui.LoadTheme(cfg.Theme)
+	styles := ui.LoadTheme(resolveThemePreference(cfg.Theme))
 
 	vp := viewport.New(0, 0)
 	vp.Style = lipgloss.NewStyle()
@@ -577,6 +577,8 @@ func (m *model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 	default:
 		var cmd tea.Cmd
 		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.searchQuery = strings.TrimSpace(m.searchInput.Value())
+		m.refreshViewport(false)
 		return cmd
 	}
 }
@@ -1068,15 +1070,53 @@ func (m *model) applySearchHighlights(content string) string {
 	current := m.searchMatches[m.searchIndex]
 	lines := strings.Split(content, "\n")
 	for idx, line := range lines {
-		if idx == current {
-			lines[idx] = m.styles.SearchCurrent.Render(line)
-			continue
-		}
 		if _, ok := matchSet[idx]; ok {
-			lines[idx] = m.styles.SearchMatch.Render(line)
+			plain := stripANSI(line)
+			if idx == current {
+				lines[idx] = highlightInlineSearchMatches(plain, m.searchQuery, m.styles.SearchCurrent)
+			} else {
+				lines[idx] = highlightInlineSearchMatches(plain, m.searchQuery, m.styles.SearchMatch)
+			}
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func highlightInlineSearchMatches(text, query string, style lipgloss.Style) string {
+	query = strings.TrimSpace(query)
+	if query == "" || text == "" {
+		return text
+	}
+
+	textRunes := []rune(text)
+	queryRunes := []rune(query)
+	if len(queryRunes) == 0 || len(textRunes) < len(queryRunes) {
+		return text
+	}
+
+	var b strings.Builder
+	last := 0
+	for i := 0; i <= len(textRunes)-len(queryRunes); {
+		segment := string(textRunes[i : i+len(queryRunes)])
+		if strings.EqualFold(segment, query) {
+			if last < i {
+				b.WriteString(string(textRunes[last:i]))
+			}
+			b.WriteString(style.Render(segment))
+			i += len(queryRunes)
+			last = i
+			continue
+		}
+		i++
+	}
+
+	if last == 0 {
+		return text
+	}
+	if last < len(textRunes) {
+		b.WriteString(string(textRunes[last:]))
+	}
+	return b.String()
 }
 
 func (m *model) jumpToSearchMatch() {
@@ -1179,7 +1219,9 @@ func (m *model) headerView() string {
 	centerBudget := max(0, remaining-3)
 	center := ""
 	if centerBudget > 0 {
-		center = m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", truncateForHeader(query, max(0, centerBudget-2))))
+		queryFrame := m.styles.HeaderQuery.GetHorizontalFrameSize()
+		queryBudget := max(0, centerBudget-queryFrame)
+		center = m.styles.HeaderQuery.Render(fmt.Sprintf("\"%s\"", truncateForHeader(query, max(0, queryBudget-2))))
 	}
 
 	row := left
@@ -1477,7 +1519,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return m.flash("Available: /backend /mode /model /depth /results /context /history /recent /stats /clear-history /show /help /exit", "warning")
+		return m.flash("Available: /backend /mode /model /depth /results /toggle /context /history /recent /stats /clear-history /show /help /exit", "warning")
 	}
 
 	command := strings.ToLower(parts[0])
@@ -1491,7 +1533,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
+		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /toggle, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
 		return m.showOverlay(sessionStatusMarkdown(m.config, m.llmProvider.Name(), m.projectStackLabel()))
 	case "context":
@@ -1637,6 +1679,11 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		cfg := m.config
 		cfg.MaxResults = count
 		return m.applySessionConfig(cfg, fmt.Sprintf("Max results set to %d", count))
+	case "toggle":
+		if len(args) != 0 {
+			return m.failSlashCommand("Usage: /toggle")
+		}
+		return m.toggleThemePreference()
 	default:
 		return m.failSlashCommand("Unknown command. Try /help")
 	}
@@ -1651,6 +1698,7 @@ func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
 	}
 
 	m.config = cfg
+	m.applyThemeStyles()
 	m.searchProvider = searchProvider
 	m.llmProvider = llmProvider
 	m.orchestrator = NewOrchestrator(searchProvider, llmProvider, cfg.MaxResults, cfg.OutputFormat, m.projectContext)
@@ -1711,10 +1759,11 @@ func (m *model) failSlashCommand(text string) tea.Cmd {
 
 func (m *model) sessionSummary() string {
 	return fmt.Sprintf(
-		"backend=%s model=%s mode=%s depth=%s results=%d context=%s",
+		"backend=%s model=%s mode=%s theme=%s depth=%s results=%d context=%s",
 		m.config.LLMBackend,
 		activeModel(m.config),
 		m.config.OutputFormat,
+		themeStatusLine(m.config.Theme),
 		m.config.SearchDepth,
 		m.config.MaxResults,
 		fallbackString(m.projectStackLabel(), "off"),
@@ -1945,6 +1994,7 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		{Name: "model", Usage: "/model <name>", Description: "set the model for the active backend"},
 		{Name: "depth", Usage: "/depth <basic|advanced>", Description: "change Tavily search depth"},
 		{Name: "results", Usage: "/results <n>", Description: "set how many Tavily results to inject into context"},
+		{Name: "toggle", Usage: "/toggle", Description: "switch between light and dark themes and save it"},
 		{Name: "context", Usage: "/context [on|off]", Description: "show or toggle detected project context"},
 		{Name: "history", Usage: "/history <query>", Description: "search saved local history from previous queries"},
 		{Name: "recent", Usage: "/recent [count]", Description: "show the most recent saved searches"},
@@ -1970,6 +2020,78 @@ func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 		}
 	}
 	return append(filtered, fallback...)
+}
+
+func (m *model) toggleThemePreference() tea.Cmd {
+	cfg := m.config
+	if resolveThemePreference(cfg.Theme) == "light" {
+		cfg.Theme = "dark"
+	} else {
+		cfg.Theme = "light"
+	}
+	cfg.normalize()
+
+	saveErr := writeConfigFile(ConfigPath(), cfg)
+	m.config = cfg
+	m.applyThemeStyles()
+	m.setFollowInputValue("")
+	m.applyLayout()
+	m.refreshViewport(false)
+
+	message := "Theme set to " + cfg.Theme
+	kind := "success"
+	if saveErr != nil {
+		message += " (session only: " + saveErr.Error() + ")"
+		kind = "warning"
+	} else {
+		message += " and saved"
+	}
+	return tea.Batch(m.followInput.Focus(), m.flash(message+" · "+m.sessionSummary(), kind))
+}
+
+func (m *model) applyThemeStyles() {
+	styles := ui.LoadTheme(resolveThemePreference(m.config.Theme))
+	m.styles = styles
+	m.spinner.Style = styles.Spinner
+	applyInputTheme(&m.followInput, styles)
+	applyInputTheme(&m.searchInput, styles)
+	m.statusBar = ui.NewStatusBar(styles)
+
+	selectedURL := ""
+	if item, ok := m.sourcesList.Selected(); ok {
+		selectedURL = strings.TrimSpace(item.URL)
+	}
+	focusedSources := m.state == StateSources
+
+	newSources := ui.NewSources(styles)
+	newSources.SetSize(m.contentW, m.sourcesH)
+	m.sourcesList = newSources
+	m.syncSources()
+	if focusedSources {
+		m.sourcesList.Focus()
+	}
+	if selectedURL != "" {
+		items := m.currentSources()
+		for idx, source := range items {
+			if strings.TrimSpace(source.URL) != selectedURL {
+				continue
+			}
+			for step := 0; step < idx; step++ {
+				m.sourcesList.Next()
+			}
+			break
+		}
+	}
+
+	m.renderer = nil
+	m.initRenderer()
+}
+
+func applyInputTheme(input *textinput.Model, styles ui.Styles) {
+	input.PromptStyle = styles.InputPrompt
+	input.TextStyle = styles.InputText
+	input.PlaceholderStyle = styles.Dimmed
+	input.CursorStyle = styles.InputCursor
 }
 
 func emitQuery(query string, followUp bool) tea.Cmd {

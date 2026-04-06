@@ -30,7 +30,8 @@ openai_model = "llama-3.3-70b-versatile"
 output_format = "concise"
 
 # === UI ===
-theme = "pastel"
+# Theme: "auto", "dark", "pastel", "light", "dracula", or "tokyo-night"
+theme = "auto"
 # Print summary to stdout on quit (default false, toggle with `p` in TUI)
 print_on_exit = false
 # Default browser command (leave empty for system default)

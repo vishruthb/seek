@@ -21,7 +21,7 @@ const (
 	defaultOllamaModel  = "llama3.1:8b"
 	defaultOpenAIURL    = "https://api.groq.com/openai"
 	defaultOpenAIModel  = "llama-3.3-70b-versatile"
-	defaultTheme        = "pastel"
+	defaultTheme        = "auto"
 	defaultOutputFormat = "concise"
 	defaultMaxTurns     = 10
 	defaultHistoryOn    = true
@@ -129,6 +129,9 @@ func applyEnvOverrides(cfg *Config) {
 	if format := strings.TrimSpace(os.Getenv("SEEK_FORMAT")); format != "" {
 		cfg.OutputFormat = format
 	}
+	if theme := strings.TrimSpace(os.Getenv("SEEK_THEME")); theme != "" {
+		cfg.Theme = theme
+	}
 	if path := strings.TrimSpace(os.Getenv("SEEK_HISTORY_DB_PATH")); path != "" {
 		cfg.HistoryDBPath = path
 	}
@@ -212,7 +215,7 @@ func (c *Config) normalize() {
 	}
 
 	switch theme := strings.TrimSpace(strings.ToLower(c.Theme)); theme {
-	case "", "dark", "pastel", "light", "dracula", "tokyo-night":
+	case "", "auto", "dark", "pastel", "light", "dracula", "tokyo-night":
 		if theme == "" {
 			c.Theme = defaultTheme
 		} else {

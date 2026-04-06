@@ -86,13 +86,13 @@ export default function Hero() {
         </p>
       </div>
 
-      <div className="max-w-2xl min-w-0 pt-2 sm:pt-4 lg:pt-0">
-        <div className="max-w-2xl min-w-0">
+      <div className="w-full max-w-2xl min-w-0 pt-2 sm:pt-4 lg:pt-0">
+        <div className="w-full max-w-2xl min-w-0">
           <CodeBlock code={installCommand} label="install" />
         </div>
       </div>
 
-      <div className="section-shell rounded-[1.3rem] border border-border-subtle bg-bg-terminal/80 p-5 lg:hidden">
+      <div className="section-shell w-full max-w-2xl rounded-[1.3rem] border border-border-subtle bg-bg-terminal/80 p-5 lg:hidden">
         <div className="font-mono text-sm text-accent-mint">quick start</div>
         <p className="mt-3 text-sm leading-7 text-text-secondary">
           install seek, run <span className="font-mono text-accent-lime">seek --setup</span>,

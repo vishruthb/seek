@@ -59,7 +59,7 @@ func RenderSplash(styles Styles, width, height int, _ string, _ string) string {
 		lines = append(lines, "")
 		spareLines--
 	}
-	lines = append(lines, styles.SplashTagline.Width(width).Align(lipgloss.Left).Render("Search grounded answers without leaving the terminal."))
+	lines = append(lines, styles.SplashTagline.Width(width).Align(lipgloss.Left).Render("your stack, your llm, your terminal."))
 	if spareLines > 0 {
 		lines = append(lines, "")
 	}

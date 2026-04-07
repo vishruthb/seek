@@ -190,6 +190,21 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	}
 }
 
+func TestStartupViewShowsAvailableUpdateNotice(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 140
+	m.height = 36
+	m.state = StateInput
+	m.updateAvailable = "v1.2.4"
+	m.applyLayout()
+
+	view := m.View()
+	if !strings.Contains(view, "Update available: v1.2.4") || !strings.Contains(view, "seek --update") {
+		t.Fatalf("expected startup view to show update notice, got %q", view)
+	}
+}
+
 func TestSlashSuggestionsNavigateAndAcceptSelection(t *testing.T) {
 	cfg := DefaultConfig()
 	m := NewModel(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})

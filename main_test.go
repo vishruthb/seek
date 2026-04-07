@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -152,14 +153,20 @@ func TestRunWithArgsUpdateInvokesUpdater(t *testing.T) {
 		selfUpdateExecutor = origExecutor
 	})
 
+	current := normalizeReleaseVersion(version)
+	if current == "" {
+		t.Fatalf("expected current version to normalize, got %q", version)
+	}
+	latest := nextPatchTag(t, current)
+
 	latestReleaseLookup = func(ctx context.Context) (string, error) {
-		return "v1.2.2", nil
+		return latest, nil
 	}
 	var called bool
 	selfUpdateExecutor = func(ctx context.Context, targetVersion string, stdout, stderr io.Writer) error {
 		called = true
-		if targetVersion != "v1.2.2" {
-			t.Fatalf("expected update target v1.2.2, got %q", targetVersion)
+		if targetVersion != latest {
+			t.Fatalf("expected update target %s, got %q", latest, targetVersion)
 		}
 		_, _ = stdout.Write([]byte("updated\n"))
 		return nil
@@ -173,9 +180,18 @@ func TestRunWithArgsUpdateInvokesUpdater(t *testing.T) {
 	if !called {
 		t.Fatalf("expected self update executor to be called")
 	}
-	if !strings.Contains(stdout.String(), "Updating seek v1.2.1 -> v1.2.2") {
+	if !strings.Contains(stdout.String(), "Updating seek "+current+" -> "+latest) {
 		t.Fatalf("expected update message, got %q", stdout.String())
 	}
+}
+
+func nextPatchTag(t *testing.T, current string) string {
+	t.Helper()
+	parsed, ok := parseSemanticVersion(current)
+	if !ok {
+		t.Fatalf("expected semantic version, got %q", current)
+	}
+	return "v" + strconv.Itoa(parsed.Major) + "." + strconv.Itoa(parsed.Minor) + "." + strconv.Itoa(parsed.Patch+1)
 }
 
 func TestRunWithArgsRejectsMixedUpdateFlags(t *testing.T) {

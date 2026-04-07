@@ -45,7 +45,7 @@ func PreferredSplashHeight(width int) int {
 	return strings.Count(logo, "\n") + 1 + 2
 }
 
-func RenderSplash(styles Styles, width, height int, _ string, _ string) string {
+func RenderSplash(styles Styles, width, height int, _ string, _ string, notice string) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
@@ -63,7 +63,11 @@ func RenderSplash(styles Styles, width, height int, _ string, _ string) string {
 	if spareLines > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, styles.SplashHint.Width(width).Align(lipgloss.Left).Render("Start typing below or use /"))
+	hint := styles.SplashHint.Width(width).Align(lipgloss.Left).Render("Start typing below or use /")
+	if strings.TrimSpace(notice) != "" {
+		hint = styles.WarningText.Width(width).Align(lipgloss.Left).Render(truncateWidth(strings.TrimSpace(notice), width))
+	}
+	lines = append(lines, hint)
 
 	content := strings.Join(lines, "\n")
 	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Bottom, content)

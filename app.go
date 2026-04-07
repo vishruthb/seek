@@ -1258,7 +1258,7 @@ func (m *model) summaryView() string {
 	}
 
 	if len(m.turns) == 0 {
-		return m.wrapStartup(ui.RenderSplash(m.styles, max(1, m.contentW-2), max(1, m.summaryH), m.config.OutputFormat, m.llmProvider.Name()))
+		return m.wrapStartup(ui.RenderSplash(m.styles, max(1, m.contentW-2), max(1, m.summaryH), m.config.OutputFormat, m.llmProvider.Name(), m.startupNotice()))
 	}
 
 	if m.currentTurn >= 0 && strings.TrimSpace(m.turns[m.currentTurn].Response) == "" {
@@ -1523,6 +1523,13 @@ func (m *model) isStartupState() bool {
 
 func (m *model) isPlainStartupState() bool {
 	return m.isStartupState() && !m.shouldRenderInputSuggestions()
+}
+
+func (m *model) startupNotice() string {
+	if strings.TrimSpace(m.updateAvailable) != "" {
+		return "Update available: " + strings.TrimSpace(m.updateAvailable) + " · run seek --update"
+	}
+	return ""
 }
 
 func (m *model) syncLayout(forceBottom bool) tea.Cmd {

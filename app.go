@@ -81,6 +81,10 @@ type (
 		ID        int64
 		Err       error
 	}
+	releaseCheckMsg struct {
+		Latest string
+		Err    error
+	}
 	timingClearMsg struct {
 		Seq int
 	}
@@ -166,6 +170,7 @@ type model struct {
 	lastTiming              SearchTiming
 	timingVisible           bool
 	timingSeq               int
+	updateAvailable         string
 
 	requestID  int
 	requestCtx context.Context
@@ -228,7 +233,7 @@ func NewModelWithOptions(cfg Config, initialQuery string, searchProvider searchp
 }
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick}
+	cmds := []tea.Cmd{m.spinner.Tick, checkForUpdateCmd(version)}
 
 	if m.startupQuery != "" {
 		m.state = StateLoading
@@ -376,6 +381,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.turns[msg.TurnIndex].HistoryID = &id
 		}
 		return m, nil
+
+	case releaseCheckMsg:
+		if strings.TrimSpace(msg.Latest) == "" || msg.Err != nil {
+			return m, nil
+		}
+		m.updateAvailable = strings.TrimSpace(msg.Latest)
+		return m, m.flashFor("Update available: "+m.updateAvailable+" · run `seek --update`", "warning", 8*time.Second)
 
 	case timingClearMsg:
 		if msg.Seq == m.timingSeq {
@@ -1375,6 +1387,9 @@ func (m *model) statusMeta() string {
 	if stack != "" {
 		parts = append(parts, stack)
 	}
+	if strings.TrimSpace(m.updateAvailable) != "" {
+		parts = append(parts, "update="+m.updateAvailable)
+	}
 	if strings.TrimSpace(m.searchQuery) != "" && len(m.searchMatches) > 0 {
 		parts = append(parts, fmt.Sprintf("%d/%d", m.searchIndex+1, len(m.searchMatches)))
 	}
@@ -1404,9 +1419,13 @@ func (m *model) showOverlay(markdown string) tea.Cmd {
 }
 
 func (m *model) flash(text, kind string) tea.Cmd {
+	return m.flashFor(text, kind, 2*time.Second)
+}
+
+func (m *model) flashFor(text, kind string, duration time.Duration) tea.Cmd {
 	m.flashText = text
 	m.flashKind = kind
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(duration, func(time.Time) tea.Msg {
 		return flashClearMsg{}
 	})
 }

@@ -523,6 +523,30 @@ func TestTimingClearsFromStatusMetaAfterTick(t *testing.T) {
 	}
 }
 
+func TestReleaseCheckNoticeAddsStatusMeta(t *testing.T) {
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		ProjectContext: &projectctx.ProjectContext{Language: "go", Framework: "chi"},
+	})
+
+	updated, cmd := m.Update(releaseCheckMsg{Latest: "v1.2.2"})
+	if cmd == nil {
+		t.Fatalf("expected flash clear command after release notice")
+	}
+	gotModel, ok := updated.(*model)
+	if !ok {
+		t.Fatalf("expected model after release notice, got %T", updated)
+	}
+	if gotModel.updateAvailable != "v1.2.2" {
+		t.Fatalf("expected updateAvailable to be set, got %q", gotModel.updateAvailable)
+	}
+	if !strings.Contains(gotModel.flashText, "seek --update") {
+		t.Fatalf("expected update flash text, got %q", gotModel.flashText)
+	}
+	if got := gotModel.statusMeta(); !strings.Contains(got, "update=v1.2.2") {
+		t.Fatalf("expected status meta to include update, got %q", got)
+	}
+}
+
 func TestQueryLifecycleIncludesAttachedFileContext(t *testing.T) {
 	projectDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectDir, "app.go"), []byte("package main\n\nfunc handler() {}\n"), 0o644); err != nil {

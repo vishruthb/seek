@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +141,51 @@ func TestRunWithArgsRejectsUnknownBackendOverride(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), `unknown backend "fake"`) {
 		t.Fatalf("expected backend validation error, got %q", stderr.String())
+	}
+}
+
+func TestRunWithArgsUpdateInvokesUpdater(t *testing.T) {
+	origLookup := latestReleaseLookup
+	origExecutor := selfUpdateExecutor
+	t.Cleanup(func() {
+		latestReleaseLookup = origLookup
+		selfUpdateExecutor = origExecutor
+	})
+
+	latestReleaseLookup = func(ctx context.Context) (string, error) {
+		return "v1.2.2", nil
+	}
+	var called bool
+	selfUpdateExecutor = func(ctx context.Context, targetVersion string, stdout, stderr io.Writer) error {
+		called = true
+		if targetVersion != "v1.2.2" {
+			t.Fatalf("expected update target v1.2.2, got %q", targetVersion)
+		}
+		_, _ = stdout.Write([]byte("updated\n"))
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithArgs([]string{"--update"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !called {
+		t.Fatalf("expected self update executor to be called")
+	}
+	if !strings.Contains(stdout.String(), "Updating seek v1.2.1 -> v1.2.2") {
+		t.Fatalf("expected update message, got %q", stdout.String())
+	}
+}
+
+func TestRunWithArgsRejectsMixedUpdateFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runWithArgs([]string{"--update", "--version"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--update cannot be combined") {
+		t.Fatalf("expected mixed update flag error, got %q", stderr.String())
 	}
 }
 

@@ -21,6 +21,12 @@ curl -fsSL https://seekcli.vercel.app/install.sh | sh
 
 That installs the binary to `~/.local/bin/seek`.
 
+To upgrade an existing install later:
+
+```bash
+seek --update
+```
+
 If you're working from source instead:
 
 ```bash
@@ -104,6 +110,7 @@ For quicker, more targeted searches:
 seek "what is a transformer in ML?"
 seek --format learning "how does QUIC differ from TCP?"
 seek --backend ollama "compare goroutines and threads"
+seek --update
 seek
 ```
 

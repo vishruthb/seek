@@ -43,6 +43,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		projectFilter   string
 		printConfig     bool
 		runSetupWizard  bool
+		runUpdate       bool
 		printVersion    bool
 		showRecent      bool
 		showStats       bool
@@ -65,6 +66,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	fs.Int64Var(&openID, "open", 0, "open a saved history entry in the TUI")
 	fs.BoolVar(&printConfig, "config", false, "print the config path and exit")
 	fs.BoolVar(&runSetupWizard, "setup", false, "create or update ~/.config/seek/config.toml interactively")
+	fs.BoolVar(&runUpdate, "update", false, "download and install the latest released version of seek")
 	fs.BoolVar(&printVersion, "version", false, "print version information and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -76,6 +78,17 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 
 	if printConfig {
 		fmt.Fprintln(stdout, ConfigPath())
+		return 0
+	}
+	if runUpdate {
+		if printVersion || printConfig || runSetupWizard || strings.TrimSpace(historyQuery) != "" || showRecent || showStats || clearHistory || openID > 0 || len(fs.Args()) > 0 {
+			fmt.Fprintln(stderr, "seek: --update cannot be combined with other actions or a query")
+			return 2
+		}
+		if err := runSelfUpdate(stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "seek: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 	if runSetupWizard {

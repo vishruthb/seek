@@ -68,6 +68,9 @@ type (
 		Query    string
 		FollowUp bool
 	}
+	startPipedQueryMsg struct {
+		Input PipedInput
+	}
 	clipboardResultMsg struct {
 		Label string
 		Err   error
@@ -96,6 +99,9 @@ type ModelOptions struct {
 	WorkingDir     string
 	HistoryStore   *historypkg.HistoryStore
 	OpenRecord     *historypkg.SearchRecord
+	ResumeRecords  []historypkg.SearchRecord
+	ResumePicker   []historypkg.SearchRecord
+	PipedInput     *PipedInput
 }
 
 type model struct {
@@ -149,6 +155,11 @@ type model struct {
 	flashText string
 	flashKind string
 
+	initialPipedInput       *PipedInput
+	pipedInputExpanded      bool
+	resumeCandidates        []historypkg.SearchRecord
+	resumeIndex             int
+	resumeOffset            int
 	workingDir              string
 	projectContext          *projectctx.ProjectContext
 	detectedProjectContext  *projectctx.ProjectContext
@@ -219,13 +230,19 @@ func NewModelWithOptions(cfg Config, initialQuery string, searchProvider searchp
 		autoScroll:             true,
 		printOnExit:            cfg.PrintOnExit,
 		currentTurn:            -1,
+		initialPipedInput:      clonePipedInput(options.PipedInput),
+		resumeCandidates:       append([]historypkg.SearchRecord(nil), options.ResumePicker...),
 		workingDir:             strings.TrimSpace(options.WorkingDir),
 		projectContext:         projectContext,
 		detectedProjectContext: detectedContext,
 	}
 
-	if options.OpenRecord != nil {
+	if len(options.ResumeRecords) > 0 {
+		m.loadHistoryRecords(options.ResumeRecords)
+	} else if options.OpenRecord != nil {
 		m.loadHistoryRecord(options.OpenRecord)
+	} else if options.ResumePicker != nil {
+		m.state = StateResumePicker
 	}
 	m.refreshInputSuggestions()
 
@@ -235,7 +252,13 @@ func NewModelWithOptions(cfg Config, initialQuery string, searchProvider searchp
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick, checkForUpdateCmd(version)}
 
-	if m.startupQuery != "" {
+	if m.state == StateResumePicker {
+		m.applyLayout()
+		m.refreshViewport(false)
+	} else if m.initialPipedInput != nil {
+		m.state = StateLoading
+		cmds = append(cmds, emitPipedQuery(*m.initialPipedInput))
+	} else if m.startupQuery != "" {
 		m.state = StateLoading
 		cmds = append(cmds, emitQuery(m.startupQuery, false))
 	} else if m.currentTurn >= 0 {
@@ -268,6 +291,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case startQueryMsg:
 		return m, m.beginQuery(msg.Query, msg.FollowUp)
+
+	case startPipedQueryMsg:
+		return m, m.beginPipedQuery(msg.Input)
 
 	case searchCompleteMsg:
 		if msg.RequestID != m.requestID {
@@ -477,6 +503,8 @@ func (m *model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleSearchKeys(msg)
 	case StateCodeSelect:
 		return m.handleCodeSelectKeys(msg)
+	case StateResumePicker:
+		return m.handleResumePickerKeys(msg)
 	}
 
 	switch msg.String() {
@@ -628,6 +656,69 @@ func (m *model) handleCodeSelectKeys(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+func (m *model) handleResumePickerKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.stopActiveRequest()
+		return tea.Quit
+	case "esc":
+		if len(m.turns) == 0 {
+			m.state = StateInput
+			m.applyLayout()
+			m.refreshViewport(false)
+			return m.followInput.Focus()
+		}
+		m.state = StateViewing
+		return m.syncLayout(false)
+	case "j", "down":
+		m.moveResumeSelection(1)
+	case "k", "up":
+		m.moveResumeSelection(-1)
+	case "enter":
+		if len(m.resumeCandidates) == 0 {
+			return m.flash("No saved chats to resume", "warning")
+		}
+		record := m.resumeCandidates[m.resumeIndex]
+		records, err := loadResumeRecords(m.historyStore, record.ID)
+		if err != nil {
+			return m.flash(err.Error(), "error")
+		}
+		return m.resumeHistoryRecords(records)
+	}
+	return nil
+}
+
+func (m *model) moveResumeSelection(delta int) {
+	if len(m.resumeCandidates) == 0 {
+		m.resumeIndex = 0
+		m.resumeOffset = 0
+		return
+	}
+	m.resumeIndex += delta
+	m.clampResumeSelection()
+}
+
+func (m *model) clampResumeSelection() {
+	if len(m.resumeCandidates) == 0 {
+		m.resumeIndex = 0
+		m.resumeOffset = 0
+		return
+	}
+	m.resumeIndex = max(0, min(m.resumeIndex, len(m.resumeCandidates)-1))
+	visible := m.resumeVisibleRows()
+	if m.resumeIndex < m.resumeOffset {
+		m.resumeOffset = m.resumeIndex
+	}
+	if m.resumeIndex >= m.resumeOffset+visible {
+		m.resumeOffset = m.resumeIndex - visible + 1
+	}
+	m.resumeOffset = max(0, m.resumeOffset)
+}
+
+func (m *model) resumeVisibleRows() int {
+	return max(1, m.viewport.Height-4)
+}
+
 func (m *model) handleSourcesKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "tab":
@@ -692,6 +783,11 @@ func (m *model) handleViewingKeys(msg tea.KeyMsg) tea.Cmd {
 		return copyTextCmd(m.output, "summary", lineCount(m.output))
 	case "Y":
 		return m.handleCodeYank()
+	case "e":
+		if m.hasPipedInput() {
+			m.pipedInputExpanded = !m.pipedInputExpanded
+			m.refreshViewport(false)
+		}
 	case "/":
 		m.state = StateSearchInput
 		m.searchInput.SetValue(m.searchQuery)
@@ -770,9 +866,50 @@ func (m *model) beginQuery(query string, followUp bool) tea.Cmd {
 	return tea.Batch(m.startSearch(), m.spinner.Tick)
 }
 
+func (m *model) beginPipedQuery(input PipedInput) tea.Cmd {
+	input.SearchQuery = strings.TrimSpace(input.SearchQuery)
+	input.ErrorContext = strings.TrimSpace(sanitizeTerminalText(input.ErrorContext))
+	input.FullOutput = strings.TrimSpace(sanitizeTerminalText(input.FullOutput))
+	input.UserQuery = strings.TrimSpace(input.UserQuery)
+	if strings.TrimSpace(input.ErrorContext) == "" && strings.TrimSpace(input.FullOutput) == "" {
+		return nil
+	}
+
+	m.stopActiveRequest()
+	m.requestID++
+	m.requestCtx, m.cancel = context.WithCancel(context.Background())
+
+	query := pipedDisplayQuery(input)
+	m.turns = append(m.turns, Turn{
+		Query:       query,
+		SearchQuery: pipedEffectiveSearchQuery(input),
+		PipedInput:  clonePipedInput(&input),
+	})
+	m.currentTurn = len(m.turns) - 1
+	m.queryCount = len(m.turns)
+	m.tokenCount = 0
+	m.searching = true
+	m.streaming = false
+	m.waitingFirstToken = false
+	m.autoScroll = true
+	m.newContent = false
+	m.overlayContent = ""
+	m.timingVisible = false
+	m.state = StateLoading
+	m.codeBlocks = nil
+	m.codeSelect = 0
+	m.syncSources()
+	m.applyLayout()
+	m.refreshViewport(true)
+	return tea.Batch(m.startSearch(), m.spinner.Tick)
+}
+
 func (m *model) retryCurrentTurn() tea.Cmd {
 	if m.currentTurn < 0 {
 		return nil
+	}
+	if m.turns[m.currentTurn].PipedInput != nil {
+		return m.retryPipedTurn()
 	}
 
 	searchQuery, attachedFiles, err := prepareAttachedFiles(m.turns[m.currentTurn].Query, m.workingDir)
@@ -786,6 +923,37 @@ func (m *model) retryCurrentTurn() tea.Cmd {
 
 	m.turns[m.currentTurn].SearchQuery = effectiveSearchQuery(m.turns[m.currentTurn].Query, searchQuery, attachedFiles)
 	m.turns[m.currentTurn].AttachedFiles = attachedFiles
+	m.turns[m.currentTurn].Response = ""
+	m.turns[m.currentTurn].Error = ""
+	m.turns[m.currentTurn].Sources = nil
+	m.tokenCount = 0
+	m.searching = true
+	m.streaming = false
+	m.waitingFirstToken = false
+	m.autoScroll = true
+	m.newContent = false
+	m.overlayContent = ""
+	m.timingVisible = false
+	m.state = StateLoading
+	m.syncSources()
+	m.applyLayout()
+	m.refreshViewport(true)
+	return tea.Batch(m.startSearch(), m.spinner.Tick)
+}
+
+func (m *model) retryPipedTurn() tea.Cmd {
+	if m.currentTurn < 0 || m.turns[m.currentTurn].PipedInput == nil {
+		return nil
+	}
+
+	input := clonePipedInput(m.turns[m.currentTurn].PipedInput)
+	m.stopActiveRequest()
+	m.requestID++
+	m.requestCtx, m.cancel = context.WithCancel(context.Background())
+
+	m.turns[m.currentTurn].Query = pipedDisplayQuery(*input)
+	m.turns[m.currentTurn].SearchQuery = pipedEffectiveSearchQuery(*input)
+	m.turns[m.currentTurn].PipedInput = input
 	m.turns[m.currentTurn].Response = ""
 	m.turns[m.currentTurn].Error = ""
 	m.turns[m.currentTurn].Sources = nil
@@ -832,6 +1000,7 @@ func (m *model) startLLMStream(results []searchpkg.SearchResult) tea.Cmd {
 	query := m.turns[m.currentTurn].Query
 	history := m.conversationHistory()
 	attachedFiles := append([]AttachedFile(nil), m.turns[m.currentTurn].AttachedFiles...)
+	pipedInput := clonePipedInput(m.turns[m.currentTurn].PipedInput)
 	requestID := m.requestID
 	orchestrator := m.orchestrator
 
@@ -839,10 +1008,19 @@ func (m *model) startLLMStream(results []searchpkg.SearchResult) tea.Cmd {
 		defer close(sub)
 
 		sawTokens := false
-		response, err := orchestrator.StreamAnswer(ctx, query, results, history, attachedFiles, func(token string) {
+		onToken := func(token string) {
 			sawTokens = true
 			sendStreamMsg(ctx, sub, tokenMsg{RequestID: requestID, Text: token})
-		})
+		}
+		var (
+			response string
+			err      error
+		)
+		if pipedInput != nil {
+			response, err = orchestrator.StreamPipedAnswer(ctx, *pipedInput, results, onToken)
+		} else {
+			response, err = orchestrator.StreamAnswer(ctx, query, results, history, attachedFiles, onToken)
+		}
 		if err != nil {
 			sendStreamMsg(ctx, sub, streamErrMsg{RequestID: requestID, Err: err})
 			return
@@ -869,12 +1047,20 @@ func (m *model) conversationHistory() []llmpkg.Message {
 
 	for idx := start; idx < m.currentTurn; idx++ {
 		turn := m.turns[idx]
-		history = append(history, llmpkg.Message{Role: "user", Content: turn.Query})
+		userContent := turn.Query
+		if turn.PipedInput != nil {
+			userContent = pipedHistoryUserMessage(*turn.PipedInput)
+		}
+		history = append(history, llmpkg.Message{Role: "user", Content: userContent})
 		if response := strings.TrimSpace(sanitizeAssistantResponse(turn.Response)); response != "" {
 			history = append(history, llmpkg.Message{Role: "assistant", Content: response})
 		}
 	}
 	return history
+}
+
+func pipedHistoryUserMessage(input PipedInput) string {
+	return strings.TrimSpace(buildPipedUserContent(input, nil))
 }
 
 func (m *model) applyLayout() {
@@ -887,7 +1073,9 @@ func (m *model) applyLayout() {
 
 	m.contentW = max(1, m.width-m.styles.AppFrame.GetHorizontalFrameSize())
 	maxContentH := max(1, m.height-m.styles.AppFrame.GetVerticalFrameSize())
-	if len(m.turns) == 0 {
+	if m.state == StateResumePicker {
+		m.contentH = min(maxContentH, activeShellMaxHeight)
+	} else if len(m.turns) == 0 {
 		shellMaxHeight := startupShellMaxHeight
 		if m.shouldRenderInputSuggestions() {
 			shellMaxHeight = startupInteractiveShellMaxHeight
@@ -909,6 +1097,8 @@ func (m *model) applyLayout() {
 
 	sourcesH := 0
 	switch {
+	case m.state == StateResumePicker:
+		sourcesH = 0
 	case m.shouldRenderInputSuggestions():
 		sourcesH = m.currentSuggestionPanelHeight()
 	case len(m.turns) > 0 && m.state == StateInput && !m.isSlashInput():
@@ -1008,9 +1198,19 @@ func (m *model) composeTranscript() string {
 	}
 
 	var b strings.Builder
+	if input := m.firstPipedInput(); input != nil {
+		b.WriteString(m.renderPipedInputBlock(*input))
+		b.WriteString("\n\n")
+	}
 	for idx, turn := range m.turns {
 		if idx > 0 {
 			b.WriteString("\n\n---\n\n")
+		}
+
+		if idx < m.currentTurn {
+			question := transcriptQuestionLine(idx, turn)
+			b.WriteString(question)
+			b.WriteString("\n\n")
 		}
 
 		switch {
@@ -1037,6 +1237,75 @@ func (m *model) composeTranscript() string {
 	}
 
 	return b.String()
+}
+
+func transcriptQuestionLine(index int, turn Turn) string {
+	query := strings.TrimSpace(sanitizeTerminalText(turn.Query))
+	if query == "" {
+		return ""
+	}
+	label := "Question"
+	if index > 0 || turn.IsFollowUp {
+		label = "Follow-up"
+	}
+	return fmt.Sprintf("**%s: %s**", label, escapeInlineMarkdown(query))
+}
+
+func escapeInlineMarkdown(value string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\",
+		"`", "\\`",
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+	)
+	return replacer.Replace(value)
+}
+
+func (m *model) firstPipedInput() *PipedInput {
+	for idx := range m.turns {
+		if m.turns[idx].PipedInput != nil {
+			return m.turns[idx].PipedInput
+		}
+	}
+	return nil
+}
+
+func (m *model) hasPipedInput() bool {
+	return m.firstPipedInput() != nil
+}
+
+func (m *model) renderPipedInputBlock(input PipedInput) string {
+	header := "── " + formatPipedInputHeader(input) + " ──"
+	if !m.pipedInputExpanded {
+		summary := firstPipedInputSummary(input)
+		if summary == "" {
+			return "> " + header + "\n> press `e` to expand"
+		}
+		return "> " + header + "\n> " + summary + "\n> press `e` to expand"
+	}
+	body := strings.TrimSpace(input.FullOutput)
+	if body == "" {
+		body = strings.TrimSpace(input.ErrorContext)
+	}
+	return "> " + header + "\n\n```text\n" + body + "\n```\n\n_press `e` to collapse_"
+}
+
+func firstPipedInputSummary(input PipedInput) string {
+	for _, line := range splitOutputLines(input.ErrorContext) {
+		line = sanitizeInlineText(line)
+		if line != "" {
+			return truncateForHeader(line, 100)
+		}
+	}
+	for _, line := range splitOutputLines(input.FullOutput) {
+		line = sanitizeInlineText(line)
+		if line != "" {
+			return truncateForHeader(line, 100)
+		}
+	}
+	return ""
 }
 
 func (m *model) currentViewportMarkdown() string {
@@ -1219,7 +1488,7 @@ func (m *model) headerView() string {
 	if m.queryCount > 0 {
 		rightCount = fmt.Sprintf("[%d/%d]", m.queryCount, m.queryCount)
 	}
-	right := m.styles.HeaderCounter.Render(rightCount)
+	right := m.styles.HeaderCounter.Render("mode=" + m.config.OutputFormat + " " + rightCount)
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
 	remaining := max(0, m.contentW-leftWidth-rightWidth)
@@ -1251,6 +1520,9 @@ func (m *model) summaryView() string {
 
 	if m.state == StateCodeSelect {
 		return m.wrapSummary(ui.RenderCodeSelection(m.styles, summaryWidth, summaryHeight, buildCodePreviews(m.codeBlocks), m.codeSelect))
+	}
+	if m.state == StateResumePicker {
+		return m.wrapSummary(m.renderResumePicker())
 	}
 
 	if strings.TrimSpace(m.overlayContent) != "" {
@@ -1319,11 +1591,16 @@ func (m *model) statusHints() string {
 		return "j/k navigate  o open  y yank  Tab summary  q quit"
 	case StateCodeSelect:
 		return "1-9 choose  j/k navigate  Enter yank  Esc cancel"
+	case StateResumePicker:
+		return "j/k choose  Enter resume  Esc cancel  q quit"
 	default:
 		if m.currentTurn >= 0 && m.turns[m.currentTurn].Error != "" {
 			return "j/k scroll  Tab sources  f follow-up  r retry  y yank  q quit"
 		}
 		hints := "j/k scroll  Tab sources  f follow-up  /help commands  y yank  Y code  / search  p print  q quit"
+		if m.hasPipedInput() {
+			hints = "j/k scroll  e expand  Tab sources  f follow-up  /help commands  y yank  Y code  / search  p print  q quit"
+		}
 		if m.newContent {
 			hints += "  ↓ new content"
 		}
@@ -1347,6 +1624,9 @@ func (m *model) statusMeta() string {
 		"mode=" + m.config.OutputFormat,
 		"depth=" + m.config.SearchDepth,
 		fmt.Sprintf("n=%d", m.config.MaxResults),
+	}
+	if m.hasPipedInput() {
+		configParts = append([]string{"piped"}, configParts...)
 	}
 
 	if m.searching {
@@ -1404,6 +1684,47 @@ func (m *model) renderComposer() string {
 		state.LastQuery = m.turns[m.currentTurn].Query
 	}
 	return ui.RenderComposer(m.styles, m.contentW, m.sourcesH, state)
+}
+
+func (m *model) renderResumePicker() string {
+	width := max(1, m.viewport.Width)
+	height := max(1, m.viewport.Height)
+	innerWidth := max(1, width-2)
+
+	lines := []string{m.styles.HorizontalRule(innerWidth, "Resume Saved Chats")}
+	if len(m.resumeCandidates) == 0 {
+		lines = append(lines, "")
+		lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render("No saved chats yet. Run a search first, then resume it later."))
+		return lipgloss.NewStyle().Width(width).Height(height).Render(strings.Join(lines, "\n"))
+	}
+
+	m.clampResumeSelection()
+	visibleRows := m.resumeVisibleRows()
+	end := min(len(m.resumeCandidates), m.resumeOffset+visibleRows)
+	for idx := m.resumeOffset; idx < end; idx++ {
+		record := m.resumeCandidates[idx]
+		style := m.styles.SourceLine
+		prefix := "  "
+		if idx == m.resumeIndex {
+			style = m.styles.SourceSelected
+			prefix = "› "
+		}
+		stack := fallbackString(record.ProjectStack, "no stack")
+		meta := fmt.Sprintf("#%d · %s · %s", record.ID, humanizeAge(record.CreatedAt), stack)
+		queryBudget := max(10, innerWidth-lipgloss.Width(prefix)-lipgloss.Width(meta)-3)
+		query := truncateForHeader(record.Query, queryBudget)
+		row := prefix + query
+		padding := max(1, innerWidth-lipgloss.Width(row)-lipgloss.Width(meta))
+		row += strings.Repeat(" ", padding) + m.styles.SourceMeta.Render(meta)
+		lines = append(lines, style.Width(innerWidth).Render(row))
+	}
+
+	for len(lines) < height-2 {
+		lines = append(lines, "")
+	}
+	footer := fmt.Sprintf("%d-%d/%d · Enter resume · Esc cancel", m.resumeOffset+1, end, len(m.resumeCandidates))
+	lines = append(lines, m.styles.Dimmed.Width(innerWidth).Render(truncateForHeader(footer, innerWidth)))
+	return lipgloss.NewStyle().Width(width).Height(height).Render(strings.Join(lines, "\n"))
 }
 
 func (m *model) projectStackLabel() string {
@@ -1545,13 +1866,41 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return m.flash("Available: /backend /mode /model /depth /results /toggle /context /history /recent /stats /clear-history /show /help /exit", "warning")
+		return m.flash("Available: /new /resume /backend /mode /model /depth /results /toggle /context /history /recent /stats /clear-history /show /help /exit", "warning")
 	}
 
 	command := strings.ToLower(parts[0])
 	args := parts[1:]
 
 	switch command {
+	case "new":
+		if len(args) != 0 {
+			return m.failSlashCommand("Usage: /new")
+		}
+		return m.startNewChat()
+	case "resume":
+		if len(args) > 1 {
+			return m.failSlashCommand("Usage: /resume [id]")
+		}
+		if m.historyStore == nil {
+			return m.failSlashCommand("History is not available for this session")
+		}
+		var resumeID int64
+		if len(args) == 1 {
+			value, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil || value <= 0 {
+				return m.failSlashCommand("Usage: /resume [id]")
+			}
+			resumeID = value
+		}
+		if resumeID == 0 {
+			return m.showResumePicker("")
+		}
+		records, err := loadResumeRecords(m.historyStore, resumeID)
+		if err != nil {
+			return m.failSlashCommand(err.Error())
+		}
+		return m.resumeHistoryRecords(records)
 	case "exit", "quit":
 		m.stopActiveRequest()
 		return tea.Quit
@@ -1559,7 +1908,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		m.setFollowInputValue("")
 		m.applyLayout()
 		m.refreshViewport(false)
-		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /backend, /mode, /model, /depth, /results, /toggle, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
+		return tea.Batch(m.followInput.Focus(), m.flash("Commands: /new, /resume, /backend, /mode, /model, /depth, /results, /toggle, /context, /history, /recent, /stats, /clear-history, /copy, /show, /help, /exit", "success"))
 	case "show", "status":
 		return m.showOverlay(sessionStatusMarkdown(m.config, m.llmProvider.Name(), m.projectStackLabel()))
 	case "context":
@@ -1667,7 +2016,7 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 		}
 		cfg := m.config
 		cfg.OutputFormat = value
-		return m.applySessionConfig(cfg, "Output format set to "+value)
+		return m.applySessionConfigAndSave(cfg, "Output format set to "+value)
 	case "model":
 		if len(args) == 0 {
 			return m.failSlashCommand("Usage: /model <name>")
@@ -1715,12 +2064,124 @@ func (m *model) executeSlashCommand(raw string) tea.Cmd {
 	}
 }
 
-func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
-	cfg.normalize()
+func (m *model) startNewChat() tea.Cmd {
+	m.stopActiveRequest()
+	m.turns = nil
+	m.currentTurn = -1
+	m.queryCount = 0
+	m.tokenCount = 0
+	m.output = ""
+	m.baseRendered = ""
+	m.overlayContent = ""
+	m.searchQuery = ""
+	m.searchMatches = nil
+	m.searchIndex = 0
+	m.codeBlocks = nil
+	m.codeSelect = 0
+	m.timingVisible = false
+	m.lastTiming = SearchTiming{}
+	m.lastSearchMs = 0
+	m.lastLLMMs = 0
+	m.lastTotalMs = 0
+	m.initialPipedInput = nil
+	m.pipedInputExpanded = false
+	m.autoScroll = true
+	m.newContent = false
+	m.syncSources()
+	m.state = StateInput
+	m.setFollowInputValue("")
+	m.applyLayout()
+	m.refreshViewport(false)
+	return m.followInput.Focus()
+}
 
+func (m *model) resumeHistoryRecords(records []historypkg.SearchRecord) tea.Cmd {
+	if len(records) == 0 {
+		return m.failSlashCommand("No saved history to resume")
+	}
+
+	m.stopActiveRequest()
+	terminalRecord := records[len(records)-1]
+	workingDir, ctx := resolveSessionProjectContext(m.workingDir, &terminalRecord)
+	m.workingDir = workingDir
+	m.projectContext = cloneProjectContext(ctx)
+	m.detectedProjectContext = cloneProjectContext(ctx)
+	if m.orchestrator != nil {
+		m.orchestrator.projectContext = m.projectContext
+	}
+
+	m.loadHistoryRecords(records)
+	m.overlayContent = ""
+	m.searchQuery = ""
+	m.searchMatches = nil
+	m.searchIndex = 0
+	m.codeBlocks = nil
+	m.codeSelect = 0
+	m.initialPipedInput = nil
+	m.pipedInputExpanded = false
+	m.autoScroll = true
+	m.newContent = false
+	m.timingVisible = false
+	m.state = StateViewing
+	m.setFollowInputValue("")
+	m.followInput.Blur()
+	m.syncSources()
+	m.applyLayout()
+	m.refreshViewport(true)
+	label := "turn"
+	if len(records) != 1 {
+		label = "turns"
+	}
+	return m.flash(fmt.Sprintf("Resumed %d saved %s", len(records), label), "success")
+}
+
+func (m *model) showResumePicker(projectFilter string) tea.Cmd {
+	if m.historyStore == nil {
+		return m.failSlashCommand("History is not available for this session")
+	}
+	records, err := m.historyStore.ResumeCandidates(100, projectFilter)
+	if err != nil {
+		return m.failSlashCommand("Resume list failed: " + err.Error())
+	}
+	m.resumeCandidates = records
+	m.resumeIndex = 0
+	m.resumeOffset = 0
+	m.overlayContent = ""
+	m.searchQuery = ""
+	m.searchMatches = nil
+	m.searchIndex = 0
+	m.state = StateResumePicker
+	m.setFollowInputValue("")
+	m.followInput.Blur()
+	m.applyLayout()
+	m.refreshViewport(false)
+	return nil
+}
+
+func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
+	return m.applySessionConfigInternal(cfg, successText, false)
+}
+
+func (m *model) applySessionConfigAndSave(cfg Config, successText string) tea.Cmd {
+	return m.applySessionConfigInternal(cfg, successText, true)
+}
+
+func (m *model) applySessionConfigInternal(cfg Config, successText string, persist bool) tea.Cmd {
+	cfg.normalize()
 	searchProvider, llmProvider, err := initProviders(cfg)
 	if err != nil {
 		return m.failSlashCommand(err.Error())
+	}
+
+	message := successText + " · " + m.sessionSummaryForConfig(cfg)
+	kind := "success"
+	if persist {
+		if err := writeConfigFile(ConfigPath(), cfg); err != nil {
+			message += " (session only: " + err.Error() + ")"
+			kind = "warning"
+		} else {
+			message += " and saved"
+		}
 	}
 
 	m.config = cfg
@@ -1732,7 +2193,7 @@ func (m *model) applySessionConfig(cfg Config, successText string) tea.Cmd {
 	m.setFollowInputValue("")
 	m.applyLayout()
 	m.refreshViewport(false)
-	return tea.Batch(m.followInput.Focus(), m.flash(successText+" · "+m.sessionSummary(), "success"))
+	return tea.Batch(m.followInput.Focus(), m.flash(message, kind))
 }
 
 func (m *model) saveTurnToHistoryCmd(turnIndex int) tea.Cmd {
@@ -1784,14 +2245,18 @@ func (m *model) failSlashCommand(text string) tea.Cmd {
 }
 
 func (m *model) sessionSummary() string {
+	return m.sessionSummaryForConfig(m.config)
+}
+
+func (m *model) sessionSummaryForConfig(cfg Config) string {
 	return fmt.Sprintf(
 		"backend=%s model=%s mode=%s theme=%s depth=%s results=%d context=%s",
-		m.config.LLMBackend,
-		activeModel(m.config),
-		m.config.OutputFormat,
-		themeStatusLine(m.config.Theme),
-		m.config.SearchDepth,
-		m.config.MaxResults,
+		cfg.LLMBackend,
+		activeModel(cfg),
+		cfg.OutputFormat,
+		themeStatusLine(cfg.Theme),
+		cfg.SearchDepth,
+		cfg.MaxResults,
 		fallbackString(m.projectStackLabel(), "off"),
 	)
 }
@@ -2015,6 +2480,8 @@ func (m *model) tryAutocompleteSlashCommand() bool {
 func (m *model) filteredSlashCommands(prefix string) []slashCommandSpec {
 	query := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(prefix, "/")))
 	all := []slashCommandSpec{
+		{Name: "new", Usage: "/new", Description: "start a fresh chat"},
+		{Name: "resume", Usage: "/resume [id]", Description: "resume a saved history thread"},
 		{Name: "backend", Usage: "/backend <ollama|openai>", Description: "switch the active LLM backend for this session"},
 		{Name: "mode", Usage: "/mode <concise|learning|explanatory|oneliner>", Description: "change the answer style without restarting"},
 		{Name: "model", Usage: "/model <name>", Description: "set the model for the active backend"},
@@ -2126,6 +2593,12 @@ func emitQuery(query string, followUp bool) tea.Cmd {
 	}
 }
 
+func emitPipedQuery(input PipedInput) tea.Cmd {
+	return func() tea.Msg {
+		return startPipedQueryMsg{Input: input}
+	}
+}
+
 func clearTimingCmd(seq int) tea.Cmd {
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
 		return timingClearMsg{Seq: seq}
@@ -2183,23 +2656,35 @@ func (m *model) loadHistoryRecord(record *historypkg.SearchRecord) {
 		return
 	}
 
-	m.turns = []Turn{{
-		Query:       record.Query,
-		SearchQuery: record.Query,
-		Response:    record.Response,
-		Sources:     convertHistorySources(record.Sources),
-		IsFollowUp:  record.IsFollowUp,
-		HistoryID:   int64Ptr(record.ID),
-	}}
-	m.currentTurn = 0
-	m.queryCount = 1
-	m.lastSearchMs = record.SearchMs
-	m.lastLLMMs = record.LLMMs
-	m.lastTotalMs = record.TotalMs
+	m.loadHistoryRecords([]historypkg.SearchRecord{*record})
+}
+
+func (m *model) loadHistoryRecords(records []historypkg.SearchRecord) {
+	if len(records) == 0 {
+		return
+	}
+
+	m.turns = make([]Turn, 0, len(records))
+	for idx, record := range records {
+		m.turns = append(m.turns, Turn{
+			Query:       record.Query,
+			SearchQuery: record.Query,
+			Response:    record.Response,
+			Sources:     convertHistorySources(record.Sources),
+			IsFollowUp:  idx > 0 || record.IsFollowUp,
+			HistoryID:   int64Ptr(record.ID),
+		})
+	}
+	m.currentTurn = len(m.turns) - 1
+	m.queryCount = len(m.turns)
+	last := records[len(records)-1]
+	m.lastSearchMs = last.SearchMs
+	m.lastLLMMs = last.LLMMs
+	m.lastTotalMs = last.TotalMs
 	m.lastTiming = SearchTiming{
-		SearchMs: record.SearchMs,
-		LLMMs:    record.LLMMs,
-		TotalMs:  record.TotalMs,
+		SearchMs: last.SearchMs,
+		LLMMs:    last.LLMMs,
+		TotalMs:  last.TotalMs,
 	}
 }
 

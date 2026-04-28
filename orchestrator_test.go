@@ -128,3 +128,58 @@ func TestSourcesFromSearchResultsNormalizesDomains(t *testing.T) {
 		t.Fatalf("expected normalized domain, got %q", sources[0].Domain)
 	}
 }
+
+func TestBuildPipedMessagesIncludesCommandOutputAndContext(t *testing.T) {
+	input := PipedInput{
+		SearchQuery:  "Go cannot use variable of type string as int value",
+		ErrorContext: "./main.go:42:15: cannot use x (variable of type string) as int value",
+		FullOutput:   "go build\n./main.go:42:15: cannot use x (variable of type string) as int value",
+		UserQuery:    "why did this fail",
+	}
+	results := []searchpkg.SearchResult{
+		{Title: "Go FAQ", URL: "https://example.com/go", Content: "Go has static types."},
+	}
+
+	messages := buildPipedMessages(input, results, &projectctx.ProjectContext{Language: "go", Framework: "chi"}, "concise")
+	if len(messages) != 2 {
+		t.Fatalf("expected system and user messages, got %#v", messages)
+	}
+	if !strings.Contains(messages[0].Content, "explains errors and command output") || !strings.Contains(messages[0].Content, "go project using the chi") {
+		t.Fatalf("expected piped system prompt with project context, got %q", messages[0].Content)
+	}
+	user := messages[1].Content
+	for _, want := range []string{"Question: why did this fail", "Command output:", "./main.go:42:15", "Full output (truncated):", "[1] Go FAQ"} {
+		if !strings.Contains(user, want) {
+			t.Fatalf("expected piped user content to contain %q, got %q", want, user)
+		}
+	}
+}
+
+func TestSearchPipedUsesExplicitQueryWhenPresent(t *testing.T) {
+	searchProvider := &fakeSearchProvider{results: map[string][]searchpkg.SearchResult{}}
+	orchestrator := NewOrchestrator(
+		searchProvider,
+		&fakeLLMProvider{name: "fake/model"},
+		5,
+		"concise",
+		&projectctx.ProjectContext{Language: "go", Framework: "chi"},
+	)
+
+	_, err := orchestrator.SearchPiped(context.Background(), PipedInput{
+		SearchQuery: "Go cannot use variable of type string as int value",
+		UserQuery:   "why is this failing",
+	})
+	if err != nil {
+		t.Fatalf("SearchPiped: %v", err)
+	}
+	if len(searchProvider.calls) != 1 {
+		t.Fatalf("expected one search call, got %d", len(searchProvider.calls))
+	}
+	got := searchProvider.calls[0].Query
+	if !strings.Contains(got, "why is this failing") || strings.Contains(got, "cannot use variable") {
+		t.Fatalf("expected explicit query, not raw error, got %q", got)
+	}
+	if !strings.Contains(got, "go") || !strings.Contains(got, "chi") {
+		t.Fatalf("expected project context enrichment, got %q", got)
+	}
+}

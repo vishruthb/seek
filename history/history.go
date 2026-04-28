@@ -208,6 +208,53 @@ func (h *HistoryStore) Recent(n int, projectDir string) ([]SearchRecord, error) 
 	return scanRecords(rows)
 }
 
+func (h *HistoryStore) ResumeCandidates(n int, projectDir string) ([]SearchRecord, error) {
+	if h == nil || h.db == nil {
+		return nil, errors.New("history store is not initialized")
+	}
+	if n <= 0 {
+		n = 100
+	}
+
+	projectDir = strings.TrimSpace(projectDir)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if projectDir == "" {
+		rows, err = h.db.Query(`
+			SELECT
+				s.id, s.query, s.response, s.sources, s.project_dir, s.project_stack,
+				s.llm_backend, s.output_format, s.search_ms, s.llm_ms, s.total_ms,
+				s.is_followup, s.parent_id, s.created_at
+			FROM searches AS s
+			WHERE NOT EXISTS (
+				SELECT 1 FROM searches AS child WHERE child.parent_id = s.id
+			)
+			ORDER BY s.created_at DESC, s.id DESC
+			LIMIT ?`, n)
+	} else {
+		rows, err = h.db.Query(`
+			SELECT
+				s.id, s.query, s.response, s.sources, s.project_dir, s.project_stack,
+				s.llm_backend, s.output_format, s.search_ms, s.llm_ms, s.total_ms,
+				s.is_followup, s.parent_id, s.created_at
+			FROM searches AS s
+			WHERE s.project_dir = ?
+			  AND NOT EXISTS (
+				SELECT 1 FROM searches AS child WHERE child.parent_id = s.id
+			  )
+			ORDER BY s.created_at DESC, s.id DESC
+			LIMIT ?`, projectDir, n)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query resume candidates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanRecords(rows)
+}
+
 func (h *HistoryStore) Get(id int64) (*SearchRecord, error) {
 	if h == nil || h.db == nil {
 		return nil, errors.New("history store is not initialized")
@@ -226,6 +273,37 @@ func (h *HistoryStore) Get(id int64) (*SearchRecord, error) {
 		return nil, err
 	}
 	return record, nil
+}
+
+func (h *HistoryStore) Thread(id int64) ([]SearchRecord, error) {
+	if h == nil || h.db == nil {
+		return nil, errors.New("history store is not initialized")
+	}
+	if id <= 0 {
+		return nil, errors.New("history id must be positive")
+	}
+
+	records := make([]SearchRecord, 0, 8)
+	seen := make(map[int64]struct{}, 8)
+	currentID := id
+	for depth := 0; depth < 200; depth++ {
+		if _, ok := seen[currentID]; ok {
+			return nil, fmt.Errorf("history thread has a parent cycle at id %d", currentID)
+		}
+		seen[currentID] = struct{}{}
+
+		record, err := h.Get(currentID)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, *record)
+		if record.ParentID == nil || *record.ParentID <= 0 {
+			reverseRecords(records)
+			return records, nil
+		}
+		currentID = *record.ParentID
+	}
+	return nil, errors.New("history thread is too deep")
 }
 
 func (h *HistoryStore) Stats() (*HistoryStats, error) {
@@ -465,4 +543,10 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func reverseRecords(records []SearchRecord) {
+	for left, right := 0, len(records)-1; left < right; left, right = left+1, right-1 {
+		records[left], records[right] = records[right], records[left]
+	}
 }

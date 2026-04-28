@@ -84,6 +84,76 @@ func TestSaveFollowUpWithParentID(t *testing.T) {
 	}
 }
 
+func TestThreadReturnsParentChainOldestFirst(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	root := sampleRecord("root question")
+	rootID := mustSave(t, store, root)
+
+	firstFollowUp := sampleRecord("first follow-up")
+	firstFollowUp.IsFollowUp = true
+	firstFollowUp.ParentID = &rootID
+	firstID := mustSave(t, store, firstFollowUp)
+
+	secondFollowUp := sampleRecord("second follow-up")
+	secondFollowUp.IsFollowUp = true
+	secondFollowUp.ParentID = &firstID
+	secondID := mustSave(t, store, secondFollowUp)
+
+	records, err := store.Thread(secondID)
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("expected 3 thread records, got %#v", records)
+	}
+	for idx, want := range []string{"root question", "first follow-up", "second follow-up"} {
+		if records[idx].Query != want {
+			t.Fatalf("expected record %d query %q, got %#v", idx, want, records[idx])
+		}
+	}
+	if records[2].ParentID == nil || *records[2].ParentID != firstID {
+		t.Fatalf("expected terminal parent id, got %#v", records[2].ParentID)
+	}
+}
+
+func TestResumeCandidatesReturnsThreadLeavesNewestFirst(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	rootID := mustSave(t, store, sampleRecord("root question"))
+	followup := sampleRecord("follow-up")
+	followup.IsFollowUp = true
+	followup.ParentID = &rootID
+	followup.ProjectDir = "/workspace/project"
+	followupID := mustSave(t, store, followup)
+
+	standalone := sampleRecord("standalone")
+	standalone.ProjectDir = "/workspace/project"
+	standaloneID := mustSave(t, store, standalone)
+
+	other := sampleRecord("other project")
+	other.ProjectDir = "/workspace/other"
+	_ = mustSave(t, store, other)
+
+	records, err := store.ResumeCandidates(10, "/workspace/project")
+	if err != nil {
+		t.Fatalf("ResumeCandidates: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 project leaf records, got %#v", records)
+	}
+	if records[0].ID != standaloneID || records[1].ID != followupID {
+		t.Fatalf("expected newest project leaves standalone/followup, got %#v", records)
+	}
+	for _, record := range records {
+		if record.ID == rootID {
+			t.Fatalf("expected parent record to be excluded from resume candidates")
+		}
+	}
+}
+
 func TestSearchWithFTS(t *testing.T) {
 	store := newTestStore(t)
 	defer store.Close()

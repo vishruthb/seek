@@ -48,6 +48,8 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		showRecent      bool
 		showStats       bool
 		clearHistory    bool
+		useLastError    bool
+		resumeHistory   bool
 		openID          int64
 	)
 
@@ -63,6 +65,8 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&showRecent, "recent", false, "print recent history entries and exit")
 	fs.BoolVar(&showStats, "stats", false, "print history statistics and exit")
 	fs.BoolVar(&clearHistory, "clear-history", false, "delete all saved local history entries and exit")
+	fs.BoolVar(&useLastError, "last-error", false, "rerun the last captured failed command and explain its output")
+	fs.BoolVar(&resumeHistory, "resume", false, "show saved chats to resume, or pass a history id as the only arg")
 	fs.Int64Var(&openID, "open", 0, "open a saved history entry in the TUI")
 	fs.BoolVar(&printConfig, "config", false, "print the config path and exit")
 	fs.BoolVar(&runSetupWizard, "setup", false, "create or update ~/.config/seek/config.toml interactively")
@@ -81,7 +85,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if runUpdate {
-		if printVersion || printConfig || runSetupWizard || strings.TrimSpace(historyQuery) != "" || showRecent || showStats || clearHistory || openID > 0 || len(fs.Args()) > 0 {
+		if printVersion || printConfig || runSetupWizard || strings.TrimSpace(historyQuery) != "" || showRecent || showStats || clearHistory || useLastError || resumeHistory || openID > 0 || len(fs.Args()) > 0 {
 			fmt.Fprintln(stderr, "seek: --update cannot be combined with other actions or a query")
 			return 2
 		}
@@ -101,6 +105,14 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	if printVersion {
 		fmt.Fprintf(stdout, "seek version %s (%s, %s)\n", version, commit, date)
 		return 0
+	}
+	if useLastError && (strings.TrimSpace(historyQuery) != "" || showRecent || showStats || clearHistory || resumeHistory || openID > 0) {
+		fmt.Fprintln(stderr, "seek: --last-error cannot be combined with history actions, --resume, or --open")
+		return 2
+	}
+	if resumeHistory && (strings.TrimSpace(historyQuery) != "" || showRecent || showStats || clearHistory || openID > 0) {
+		fmt.Fprintln(stderr, "seek: --resume cannot be combined with history actions or --open")
+		return 2
 	}
 
 	cfg, err := LoadConfig()
@@ -169,7 +181,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprint(stdout, historyRecordsTable(records))
 		if len(records) > 0 {
-			fmt.Fprint(stdout, "\nUse: seek --open <id>  to re-view a past result in the TUI\n")
+			fmt.Fprint(stdout, "\nUse: seek --resume <id>  to continue a saved thread, or seek --open <id> to view one result\n")
 		}
 		return 0
 	}
@@ -185,7 +197,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprint(stdout, historyRecordsTable(records))
 		if len(records) > 0 {
-			fmt.Fprint(stdout, "\nUse: seek --open <id>  to re-view a past result in the TUI\n")
+			fmt.Fprint(stdout, "\nUse: seek --resume <id>  to continue a saved thread, or seek --open <id> to view one result\n")
 		}
 		return 0
 	}
@@ -204,6 +216,42 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var openRecord *historypkg.SearchRecord
+	var resumeRecords []historypkg.SearchRecord
+	var resumePicker []historypkg.SearchRecord
+	if resumeHistory {
+		if historyStore == nil {
+			fmt.Fprintln(stderr, "seek: history is unavailable")
+			return 1
+		}
+		resumeID, remaining, err := parseResumeArgs(extraArgs)
+		if err != nil {
+			fmt.Fprintf(stderr, "seek: %v\n", err)
+			return 2
+		}
+		if len(remaining) > 0 {
+			fmt.Fprintf(stderr, "seek: unexpected args: %s\n", strings.Join(remaining, " "))
+			return 2
+		}
+		if resumeID > 0 {
+			records, err := loadResumeRecords(historyStore, resumeID)
+			if err != nil {
+				fmt.Fprintf(stderr, "seek: %v\n", err)
+				return 1
+			}
+			resumeRecords = records
+		} else {
+			records, err := loadResumeCandidates(historyStore, normalizeProjectFilter(cwd, projectFilter))
+			if err != nil {
+				fmt.Fprintf(stderr, "seek: %v\n", err)
+				return 1
+			}
+			resumePicker = records
+		}
+		extraArgs = nil
+		if len(resumeRecords) > 0 {
+			sessionWorkingDir, projectCtx = resolveSessionProjectContext(cwd, &resumeRecords[len(resumeRecords)-1])
+		}
+	}
 	if openID > 0 {
 		if historyStore == nil {
 			fmt.Fprintln(stderr, "seek: history is unavailable")
@@ -220,7 +268,7 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 
 	searchProvider, llmProvider, err := initProviders(cfg)
 	if err != nil {
-		if openRecord == nil {
+		if openRecord == nil && len(resumeRecords) == 0 && resumePicker == nil {
 			fmt.Fprintf(stderr, "seek: %v\n", err)
 			return 1
 		}
@@ -232,6 +280,35 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 	}
 
 	query := strings.TrimSpace(strings.Join(extraArgs, " "))
+	var pipedInput *PipedInput
+	if useLastError {
+		_, raw, err := readLastErrorOutput(context.Background())
+		if err != nil {
+			fmt.Fprintf(stderr, "seek: %v\n", err)
+			return 1
+		}
+		input := preparePipedInput(raw, query)
+		pipedInput = &input
+	} else if openRecord == nil && len(resumeRecords) == 0 && inputFromPipeDetector() {
+		raw, err := readPipedInput(stdinPipeReader)
+		if err != nil {
+			fmt.Fprintf(stderr, "seek: failed to read stdin: %v\n", err)
+			return 1
+		}
+		input := preparePipedInput(raw, query)
+		if strings.TrimSpace(input.FullOutput) == "" {
+			fmt.Fprintln(stderr, "seek: piped input is empty. Try: your-command 2>&1 | seek")
+			return 1
+		}
+		pipedInput = &input
+	}
+	if pipedInput != nil && strings.TrimSpace(pipedInput.FullOutput) == "" {
+		fmt.Fprintln(stderr, "seek: piped input is empty. Try: your-command 2>&1 | seek")
+		return 1
+	}
+	if pipedInput != nil && !outputTTYDetector() {
+		return runPipedStdout(context.Background(), *pipedInput, cfg, projectCtx, historyStore, searchProvider, llmProvider, sessionWorkingDir, stdout, stderr)
+	}
 	if openRecord != nil {
 		query = ""
 	}
@@ -240,9 +317,24 @@ func runWithArgs(args []string, stdout, stderr io.Writer) int {
 		WorkingDir:     sessionWorkingDir,
 		HistoryStore:   historyStore,
 		OpenRecord:     openRecord,
+		ResumeRecords:  resumeRecords,
+		ResumePicker:   resumePicker,
+		PipedInput:     pipedInput,
 	})
 
-	program := tea.NewProgram(m, tea.WithAltScreen())
+	programOptions := []tea.ProgramOption{tea.WithAltScreen()}
+	var ttyInput *os.File
+	if pipedInput != nil {
+		var err error
+		ttyInput, err = openTTYForProgram()
+		if err != nil {
+			fmt.Fprintf(stderr, "seek: failed to open terminal for pipe mode: %v\n", err)
+			return 1
+		}
+		defer ttyInput.Close()
+		programOptions = append(programOptions, tea.WithInput(ttyInput))
+	}
+	program := tea.NewProgram(m, programOptions...)
 	finalModel, err := program.Run()
 	if err != nil {
 		fmt.Fprintf(stderr, "seek: %v\n", err)
@@ -324,6 +416,42 @@ func parseRecentLimit(args []string) (int, []string, error) {
 		return 0, nil, fmt.Errorf("recent count must be positive")
 	}
 	return value, args[1:], nil
+}
+
+func parseResumeArgs(args []string) (int64, []string, error) {
+	if len(args) == 0 {
+		return 0, nil, nil
+	}
+	value, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || value <= 0 {
+		return 0, args, fmt.Errorf("--resume expects an optional positive history id")
+	}
+	return value, args[1:], nil
+}
+
+func loadResumeRecords(store *historypkg.HistoryStore, id int64) ([]historypkg.SearchRecord, error) {
+	if store == nil {
+		return nil, fmt.Errorf("history is unavailable")
+	}
+	if id <= 0 {
+		return nil, fmt.Errorf("history id must be positive")
+	}
+	records, err := store.Thread(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resume history entry %d: %w", id, err)
+	}
+	return records, nil
+}
+
+func loadResumeCandidates(store *historypkg.HistoryStore, projectFilter string) ([]historypkg.SearchRecord, error) {
+	if store == nil {
+		return nil, fmt.Errorf("history is unavailable")
+	}
+	records, err := store.ResumeCandidates(100, projectFilter)
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 type unavailableSearchProvider struct {

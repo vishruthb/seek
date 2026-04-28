@@ -100,6 +100,59 @@ export SEEK_THEME="light"
 
 ## Usage
 
+### Pipe errors directly
+
+Pipe any command output into seek — it extracts the error, searches the web, and explains the fix:
+
+```bash
+cargo build 2>&1 | seek
+go test ./... 2>&1 | seek
+python train.py 2>&1 | seek
+npm install 2>&1 | seek
+gcc main.c 2>&1 | seek
+```
+
+Add a question for more targeted answers:
+
+```bash
+kubectl get pods 2>&1 | seek "why is my pod in CrashLoopBackOff"
+cat config.yaml 2>&1 | seek "is anything wrong with this"
+```
+
+Seek extracts the relevant error from the output, searches with your project context, and streams an explanation. Works with any command — compilers, test runners, package managers, deployment tools.
+
+If stdout is also piped, seek outputs plain markdown instead of launching the TUI:
+
+```bash
+cargo build 2>&1 | seek > fix.md
+cargo build 2>&1 | seek | head -20
+```
+
+For a best-effort rerun of the last captured failed command, add a shell hook that records the command, then use:
+
+```bash
+seek --last-error
+```
+
+Example zsh hook:
+
+```bash
+seek_capture_error() {
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        fc -ln -1 > "/tmp/seek_last_cmd_${USER}.txt" 2>/dev/null
+    fi
+    return $exit_code
+}
+precmd_functions+=(seek_capture_error)
+```
+
+For bash, use the same function and wire it into `PROMPT_COMMAND`:
+
+```bash
+PROMPT_COMMAND="seek_capture_error; $PROMPT_COMMAND"
+```
+
 ```bash
 seek
 ```
@@ -136,7 +189,7 @@ compare @[internal/server.go] and @[internal/router.go]
 
 As soon as you type `@[`, Seek suggests files from the current working directory. Use `↑` / `↓` to select, then `Enter` or `Tab` to insert the file path. Attached files are read locally and sent to the configured LLM backend as context for that query.
 
-### History and reopening saved searches
+### History and resuming saved searches
 
 Every completed answer is saved to `~/.config/seek/history.db` by default.
 
@@ -145,10 +198,12 @@ seek --history "tcp handshake"
 seek --recent
 seek --recent <count> --project .
 seek --stats
+seek --resume
+seek --resume <id>
 seek --open <id>
 ```
 
-Use `seek --open <id>` to reopen a saved result in the full TUI and continue with follow-up searches from there.
+Use `seek --resume` to open an interactive picker of saved chats, or `seek --resume <id>` to rebuild the full parent thread ending at that saved result. `seek --open <id>` still opens only one saved result.
 
 ### In-session slash commands
 
@@ -163,6 +218,9 @@ Use `/` in the input bar to reconfigure the current session without restarting:
 /depth advanced
 /results 8
 /toggle
+/new
+/resume
+/resume <id>
 /context
 /context off
 /history tcp

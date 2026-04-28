@@ -109,7 +109,7 @@ func historyRecordsMarkdown(title string, records []historypkg.SearchRecord) str
 		fmt.Fprintf(&b, "- `%d` · %s · %s\n", record.ID, when, stack)
 		fmt.Fprintf(&b, "  %s\n", record.Query)
 	}
-	b.WriteString("\nUse `seek --open <id>` to reopen a saved result in the full TUI.\n")
+	b.WriteString("\nUse `seek --resume <id>` to resume the full thread, or `seek --open <id>` to view one saved result.\n")
 	return b.String()
 }
 

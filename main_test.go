@@ -255,6 +255,65 @@ func TestResolveSessionProjectContextDefaultsToCurrentDir(t *testing.T) {
 	}
 }
 
+func TestParseResumeArgs(t *testing.T) {
+	id, remaining, err := parseResumeArgs(nil)
+	if err != nil || id != 0 || len(remaining) != 0 {
+		t.Fatalf("expected empty resume args, got id=%d remaining=%v err=%v", id, remaining, err)
+	}
+
+	id, remaining, err = parseResumeArgs([]string{"42"})
+	if err != nil || id != 42 || len(remaining) != 0 {
+		t.Fatalf("expected id 42, got id=%d remaining=%v err=%v", id, remaining, err)
+	}
+
+	if _, _, err := parseResumeArgs([]string{"not-an-id"}); err == nil {
+		t.Fatalf("expected invalid resume id error")
+	}
+}
+
+func TestLoadResumeRecordsUsesSpecificThreadAndCandidatesListLeaves(t *testing.T) {
+	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("NewHistoryStore: %v", err)
+	}
+	defer store.Close()
+
+	rootID, err := store.Save(&historypkg.SearchRecord{
+		Query:      "root",
+		Response:   "root response",
+		ProjectDir: "/workspace/project",
+	})
+	if err != nil {
+		t.Fatalf("Save root: %v", err)
+	}
+	childID, err := store.Save(&historypkg.SearchRecord{
+		Query:      "child",
+		Response:   "child response",
+		ProjectDir: "/workspace/project",
+		IsFollowUp: true,
+		ParentID:   &rootID,
+	})
+	if err != nil {
+		t.Fatalf("Save child: %v", err)
+	}
+
+	records, err := loadResumeRecords(store, childID)
+	if err != nil {
+		t.Fatalf("loadResumeRecords specific: %v", err)
+	}
+	if len(records) != 2 || records[0].ID != rootID || records[1].ID != childID {
+		t.Fatalf("expected specific thread, got %#v", records)
+	}
+
+	records, err = loadResumeCandidates(store, "/workspace/project")
+	if err != nil {
+		t.Fatalf("loadResumeCandidates: %v", err)
+	}
+	if len(records) != 1 || records[0].ID != childID {
+		t.Fatalf("expected leaf candidate, got %#v", records)
+	}
+}
+
 func prepareHistoryConfig(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()

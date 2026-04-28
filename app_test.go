@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -123,6 +124,9 @@ func TestStartupLayoutStaysCompactWithoutExtraMiddlePanel(t *testing.T) {
 	if !strings.Contains(view, "███████╗") {
 		t.Fatalf("expected the startup view to show the seek logo, got %q", view)
 	}
+	if !strings.Contains(view, "mode=concise") {
+		t.Fatalf("expected startup view to show current mode, got %q", view)
+	}
 	if strings.Contains(view, "press `f` to search") {
 		t.Fatalf("expected startup view to omit the header strip, got %q", view)
 	}
@@ -180,6 +184,9 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	if m.sourcesH != startupSuggestionPanelHeight {
 		t.Fatalf("expected startup suggestions height %d, got %d", startupSuggestionPanelHeight, m.sourcesH)
 	}
+	if rows := m.suggestionVisibleRows(); rows != 3 {
+		t.Fatalf("expected startup slash menu to show 3 commands, got %d", rows)
+	}
 
 	view := m.View()
 	if !strings.Contains(view, "╚══════╝╚══════╝╚══════╝╚═╝ ╚═╝") {
@@ -187,6 +194,24 @@ func TestStartupSlashLayoutKeepsFullLogoVisible(t *testing.T) {
 	}
 	if !strings.Contains(view, "/backend") {
 		t.Fatalf("expected slash command suggestions to remain visible, got %q", view)
+	}
+}
+
+func TestActiveSlashLayoutShowsThreeCommands(t *testing.T) {
+	m := NewModel(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 140
+	m.height = 36
+	m.turns = []Turn{{Query: "what is tcp", Response: "TCP is a transport protocol."}}
+	m.currentTurn = 0
+	m.state = StateInput
+	m.setFollowInputValue("/")
+	m.applyLayout()
+
+	if m.sourcesH != activeSuggestionPanelHeight {
+		t.Fatalf("expected active suggestions height %d, got %d", activeSuggestionPanelHeight, m.sourcesH)
+	}
+	if rows := m.suggestionVisibleRows(); rows != 3 {
+		t.Fatalf("expected active slash menu to show 3 commands, got %d", rows)
 	}
 }
 
@@ -221,7 +246,7 @@ func TestSlashSuggestionsNavigateAndAcceptSelection(t *testing.T) {
 	}
 
 	_ = m.handleInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.followInput.Value(); got != "/model " {
+	if got := m.followInput.Value(); got != "/backend " {
 		t.Fatalf("expected enter to accept selected slash suggestion, got %q", got)
 	}
 }
@@ -288,6 +313,54 @@ func TestExitSlashCommandReturnsQuit(t *testing.T) {
 	}
 }
 
+func TestNewSlashCommandStartsFreshChat(t *testing.T) {
+	cfg := DefaultConfig()
+	m := NewModelWithOptions(cfg, "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		PipedInput: &PipedInput{
+			SearchQuery:  "Go cannot use string as int",
+			ErrorContext: "./main.go:1:2: cannot use x",
+			FullOutput:   "./main.go:1:2: cannot use x",
+		},
+	})
+	m.width = 120
+	m.height = 36
+	m.turns = []Turn{{
+		Query:       "old question",
+		SearchQuery: "old question",
+		Response:    "old answer",
+		Sources:     []Source{{Title: "Old", URL: "https://example.com"}},
+		PipedInput:  clonePipedInput(m.initialPipedInput),
+	}}
+	m.currentTurn = 0
+	m.queryCount = 1
+	m.output = "old answer"
+	m.overlayContent = "old overlay"
+	m.searchQuery = "old"
+	m.searchMatches = []int{1}
+	m.timingVisible = true
+	m.initialPipedInput = clonePipedInput(m.turns[0].PipedInput)
+	m.pipedInputExpanded = true
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/new")
+	if len(m.turns) != 0 || m.currentTurn != -1 || m.queryCount != 0 {
+		t.Fatalf("expected fresh chat state, got turns=%d current=%d queryCount=%d", len(m.turns), m.currentTurn, m.queryCount)
+	}
+	if m.initialPipedInput != nil || m.pipedInputExpanded {
+		t.Fatalf("expected piped state to clear")
+	}
+	if m.overlayContent != "" || m.searchQuery != "" || len(m.searchMatches) != 0 || m.timingVisible {
+		t.Fatalf("expected transient view state to clear")
+	}
+	if m.state != StateInput {
+		t.Fatalf("expected input state, got %v", m.state)
+	}
+	if !strings.Contains(m.composeTranscript(), "AI-powered web search") {
+		t.Fatalf("expected startup transcript after /new, got %q", m.composeTranscript())
+	}
+}
+
 func TestToggleSlashCommandSwitchesThemeAndPersistsConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -322,6 +395,33 @@ func TestToggleSlashCommandSwitchesThemeAndPersistsConfig(t *testing.T) {
 	}
 	if m.styles.Name != "pastel" {
 		t.Fatalf("expected dark toggle to resolve to pastel styles, got %q", m.styles.Name)
+	}
+}
+
+func TestModeSlashCommandPersistsOutputFormat(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := NewModel(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"})
+	m.width = 120
+	m.height = 36
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/mode explanatory")
+	if m.config.OutputFormat != "explanatory" {
+		t.Fatalf("expected explanatory mode, got %q", m.config.OutputFormat)
+	}
+	if !strings.Contains(m.flashText, "and saved") {
+		t.Fatalf("expected saved flash, got %q", m.flashText)
+	}
+
+	configBody, err := os.ReadFile(ConfigPath())
+	if err != nil {
+		t.Fatalf("read config after mode change: %v", err)
+	}
+	if !strings.Contains(string(configBody), "output_format = \"explanatory\"") {
+		t.Fatalf("expected persisted config to contain explanatory mode, got %q", string(configBody))
 	}
 }
 
@@ -443,13 +543,131 @@ func TestHistorySlashCommandsRenderSavedEntries(t *testing.T) {
 	m.applyLayout()
 
 	_ = m.executeSlashCommand("/history tcp")
-	if !strings.Contains(m.overlayContent, "tcp handshake") || !strings.Contains(m.overlayContent, "seek --open <id>") {
+	if !strings.Contains(m.overlayContent, "tcp handshake") || !strings.Contains(m.overlayContent, "seek --resume <id>") {
 		t.Fatalf("expected history overlay, got %q", m.overlayContent)
 	}
 
 	_ = m.executeSlashCommand("/recent")
 	if !strings.Contains(m.overlayContent, "Recent Searches") {
 		t.Fatalf("expected recent overlay, got %q", m.overlayContent)
+	}
+}
+
+func TestResumeSlashCommandLoadsSavedThread(t *testing.T) {
+	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("NewHistoryStore: %v", err)
+	}
+	defer store.Close()
+
+	rootID, err := store.Save(&historypkg.SearchRecord{
+		Query:        "what is a transformer",
+		Response:     "A transformer uses attention.",
+		ProjectDir:   "/workspace/project",
+		ProjectStack: "go/chi",
+		LLMBackend:   "fake/model",
+		OutputFormat: "concise",
+		TotalMs:      100,
+	})
+	if err != nil {
+		t.Fatalf("Save root: %v", err)
+	}
+	childID, err := store.Save(&historypkg.SearchRecord{
+		Query:        "what about heads",
+		Response:     "Heads attend to different relationships.",
+		ProjectDir:   "/workspace/project",
+		ProjectStack: "go/chi",
+		LLMBackend:   "fake/model",
+		OutputFormat: "concise",
+		IsFollowUp:   true,
+		ParentID:     &rootID,
+		TotalMs:      120,
+	})
+	if err != nil {
+		t.Fatalf("Save child: %v", err)
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		HistoryStore: store,
+	})
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.setFollowInputValue("/resume")
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/resume " + strconv.FormatInt(childID, 10))
+	if len(m.turns) != 2 || m.currentTurn != 1 || m.queryCount != 2 {
+		t.Fatalf("expected resumed two-turn thread, got turns=%d current=%d queryCount=%d", len(m.turns), m.currentTurn, m.queryCount)
+	}
+	if m.turns[0].Query != "what is a transformer" || m.turns[1].Query != "what about heads" {
+		t.Fatalf("unexpected resumed turns: %#v", m.turns)
+	}
+	if m.turns[1].HistoryID == nil || *m.turns[1].HistoryID != childID {
+		t.Fatalf("expected terminal history id %d, got %#v", childID, m.turns[1].HistoryID)
+	}
+	if m.state != StateViewing {
+		t.Fatalf("expected resumed session to enter viewing state, got %v", m.state)
+	}
+	transcript := m.composeTranscript()
+	if !strings.Contains(transcript, "**Question: what is a transformer**") || strings.Contains(transcript, "**Follow-up: what about heads**") {
+		t.Fatalf("expected prior question only in resumed transcript, got %q", transcript)
+	}
+	if !strings.Contains(m.flashText, "Resumed 2 saved turns") {
+		t.Fatalf("expected resume flash, got %q", m.flashText)
+	}
+}
+
+func TestResumeSlashCommandWithoutIDShowsPicker(t *testing.T) {
+	store, err := historypkg.NewHistoryStore(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("NewHistoryStore: %v", err)
+	}
+	defer store.Close()
+
+	firstID, err := store.Save(&historypkg.SearchRecord{
+		Query:      "first chat",
+		Response:   "first answer",
+		ProjectDir: "/workspace/project",
+	})
+	if err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	secondID, err := store.Save(&historypkg.SearchRecord{
+		Query:      "second chat",
+		Response:   "second answer",
+		ProjectDir: "/workspace/project",
+	})
+	if err != nil {
+		t.Fatalf("Save second: %v", err)
+	}
+
+	m := NewModelWithOptions(DefaultConfig(), "", &fakeSearchProvider{}, &fakeLLMProvider{name: "fake/model"}, ModelOptions{
+		HistoryStore: store,
+	})
+	m.width = 120
+	m.height = 40
+	m.state = StateInput
+	m.applyLayout()
+
+	_ = m.executeSlashCommand("/resume")
+	if m.state != StateResumePicker {
+		t.Fatalf("expected resume picker state, got %v", m.state)
+	}
+	if len(m.resumeCandidates) != 2 || m.resumeCandidates[0].ID != secondID || m.resumeCandidates[1].ID != firstID {
+		t.Fatalf("expected newest resume candidates first, got %#v", m.resumeCandidates)
+	}
+	view := stripANSI(m.summaryView())
+	if !strings.Contains(view, "Resume Saved Chats") || !strings.Contains(view, "second chat") {
+		t.Fatalf("expected resume picker view, got %q", view)
+	}
+
+	cmd := m.handleResumePickerKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected resume flash command")
+	}
+	if len(m.turns) != 1 || m.turns[0].HistoryID == nil || *m.turns[0].HistoryID != secondID {
+		t.Fatalf("expected selected chat to load, got %#v", m.turns)
 	}
 }
 
@@ -604,6 +822,49 @@ func TestQueryLifecycleIncludesAttachedFileContext(t *testing.T) {
 	}
 }
 
+func TestPipedQueryLifecycleShowsInputAndCarriesContext(t *testing.T) {
+	input := preparePipedInput("./main.go:42:15: cannot use x (variable of type string) as int value\n", "")
+	searchProvider := &fakeSearchProvider{
+		results: map[string][]searchpkg.SearchResult{
+			input.SearchQuery: {
+				{Title: "Go types", URL: "https://example.com/go-types", Content: "Go checks types.", Score: 1},
+			},
+		},
+	}
+	llmProvider := &pipeLLMProvider{name: "fake/pipe"}
+
+	m := NewModelWithOptions(DefaultConfig(), "", searchProvider, llmProvider, ModelOptions{
+		PipedInput: &input,
+	})
+	m.width = 120
+	m.height = 40
+	m.applyLayout()
+
+	drivePipedQueryCycle(t, m, input)
+
+	if len(searchProvider.calls) != 1 || searchProvider.calls[0].Query != input.SearchQuery {
+		t.Fatalf("expected extracted search query, got %#v", searchProvider.calls)
+	}
+	if !strings.Contains(m.composeTranscript(), "piped input") || !strings.Contains(m.composeTranscript(), "press `e` to expand") {
+		t.Fatalf("expected collapsed piped input block, got %q", m.composeTranscript())
+	}
+	if !strings.Contains(m.statusMeta(), "piped") {
+		t.Fatalf("expected piped indicator in status, got %q", m.statusMeta())
+	}
+
+	_ = m.handleViewingKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	if !m.pipedInputExpanded || !strings.Contains(m.composeTranscript(), "./main.go:42:15") {
+		t.Fatalf("expected expanded piped input in transcript, got %q", m.composeTranscript())
+	}
+
+	m.turns = append(m.turns, Turn{Query: "how do I fix it"})
+	m.currentTurn = 1
+	history := m.conversationHistory()
+	if len(history) == 0 || !strings.Contains(history[0].Content, "Command output:") || !strings.Contains(history[0].Content, "./main.go:42:15") {
+		t.Fatalf("expected piped command output in follow-up history, got %#v", history)
+	}
+}
+
 func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) {
 	searchProvider := &fakeSearchProvider{
 		results: map[string][]searchpkg.SearchResult{
@@ -648,8 +909,8 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	if strings.Contains(m.composeTranscript(), "## Sources") {
 		t.Fatalf("expected trailing sources section to be stripped from transcript, got %q", m.composeTranscript())
 	}
-	if strings.Contains(m.composeTranscript(), "## Query:") || strings.Contains(m.composeTranscript(), "## Follow-up:") {
-		t.Fatalf("expected transcript to omit query headings, got %q", m.composeTranscript())
+	if strings.Contains(m.composeTranscript(), "**Question: what is a transformer**") {
+		t.Fatalf("expected current question to stay out of the transcript until a follow-up exists, got %q", m.composeTranscript())
 	}
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "seek") || !strings.Contains(view, "\"what is a transformer\"") {
@@ -657,6 +918,12 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	}
 
 	driveQueryCycle(t, m, "what about attention heads", true)
+	if !strings.Contains(m.composeTranscript(), "**Question: what is a transformer**") {
+		t.Fatalf("expected prior question above its answer after follow-up, got %q", m.composeTranscript())
+	}
+	if strings.Contains(m.composeTranscript(), "**Follow-up: what about attention heads**") {
+		t.Fatalf("expected current follow-up to stay out of the transcript until another follow-up exists, got %q", m.composeTranscript())
+	}
 
 	if len(searchProvider.calls) != 2 {
 		t.Fatalf("expected two search calls, got %d", len(searchProvider.calls))
@@ -677,6 +944,43 @@ func TestModelQueryLifecycleKeepsSourcesSeparateAndCarriesContext(t *testing.T) 
 	}
 	if !strings.Contains(secondCall[3].Content, "Attention Heads") || !strings.Contains(secondCall[3].Content, "Question: what about attention heads") {
 		t.Fatalf("expected fresh search context on follow-up, got %#v", secondCall[3])
+	}
+}
+
+func drivePipedQueryCycle(t *testing.T, m *model, input PipedInput) {
+	t.Helper()
+
+	m.beginPipedQuery(input)
+	searchMsg, ok := m.startSearch()().(searchCompleteMsg)
+	if !ok {
+		t.Fatalf("expected searchCompleteMsg")
+	}
+	_, cmd := m.Update(searchMsg)
+
+	queue := []tea.Cmd{cmd}
+	for len(queue) > 0 {
+		cmd = queue[0]
+		queue = queue[1:]
+		if cmd == nil {
+			continue
+		}
+
+		msg := cmd()
+		if msg == nil {
+			continue
+		}
+
+		switch batch := msg.(type) {
+		case tea.BatchMsg:
+			queue = append(queue, []tea.Cmd(batch)...)
+		case spinner.TickMsg:
+			continue
+		default:
+			_, next := m.Update(msg)
+			if next != nil {
+				queue = append(queue, next)
+			}
+		}
 	}
 }
 

@@ -9,6 +9,7 @@ const (
 	StateInput
 	StateSearchInput
 	StateCodeSelect
+	StateResumePicker
 )
 
 func (s AppState) String() string {
@@ -25,6 +26,8 @@ func (s AppState) String() string {
 		return "search"
 	case StateCodeSelect:
 		return "code-select"
+	case StateResumePicker:
+		return "resume-picker"
 	default:
 		return "unknown"
 	}
@@ -42,6 +45,7 @@ type Turn struct {
 	Response      string
 	Sources       []Source
 	AttachedFiles []AttachedFile
+	PipedInput    *PipedInput
 	IsFollowUp    bool
 	Error         string
 	HistoryID     *int64
@@ -56,4 +60,11 @@ type SearchTiming struct {
 	SearchMs int64
 	LLMMs    int64
 	TotalMs  int64
+}
+
+type PipedInput struct {
+	SearchQuery  string
+	ErrorContext string
+	FullOutput   string
+	UserQuery    string
 }

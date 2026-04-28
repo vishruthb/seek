@@ -42,17 +42,17 @@ func PreferredSplashHeight(width int) int {
 		return 3
 	}
 	logo := selectSplashLogo(width, 0)
-	return strings.Count(logo, "\n") + 1 + 2
+	return strings.Count(logo, "\n") + 1 + 3
 }
 
-func RenderSplash(styles Styles, width, height int, _ string, _ string, notice string) string {
+func RenderSplash(styles Styles, width, height int, mode string, provider string, notice string) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
 
 	logo := normalizeBlockWidth(selectSplashLogo(width, height))
 	logoHeight := strings.Count(logo, "\n") + 1
-	spareLines := max(0, height-(logoHeight+2))
+	spareLines := max(0, height-(logoHeight+3))
 
 	lines := []string{styles.SplashLogo.Width(width).Align(lipgloss.Left).Render(logo)}
 	if spareLines > 0 {
@@ -60,6 +60,15 @@ func RenderSplash(styles Styles, width, height int, _ string, _ string, notice s
 		spareLines--
 	}
 	lines = append(lines, styles.SplashTagline.Width(width).Align(lipgloss.Left).Render("your stack, your llm, your terminal."))
+	if spareLines > 0 {
+		lines = append(lines, "")
+		spareLines--
+	}
+	meta := "mode=" + fallbackDisplay(mode, "concise")
+	if strings.TrimSpace(provider) != "" {
+		meta += " · " + strings.TrimSpace(provider)
+	}
+	lines = append(lines, styles.SplashMeta.Width(width).Align(lipgloss.Left).Render(truncateWidth(meta, width)))
 	if spareLines > 0 {
 		lines = append(lines, "")
 	}
@@ -71,6 +80,13 @@ func RenderSplash(styles Styles, width, height int, _ string, _ string, notice s
 
 	content := strings.Join(lines, "\n")
 	return lipgloss.Place(width, height, lipgloss.Left, lipgloss.Bottom, content)
+}
+
+func fallbackDisplay(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }
 
 func RenderWelcomeHint(styles Styles, width, height int) string {
@@ -183,7 +199,7 @@ func selectSplashLogo(width, height int) string {
 			continue
 		}
 		if height > 0 {
-			requiredHeight := strings.Count(candidate, "\n") + 1 + 2
+			requiredHeight := strings.Count(candidate, "\n") + 1 + 3
 			if height < requiredHeight {
 				continue
 			}

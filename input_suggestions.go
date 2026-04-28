@@ -12,7 +12,7 @@ import (
 
 const (
 	startupSuggestionPanelHeight = 7
-	activeSuggestionPanelHeight  = 8
+	activeSuggestionPanelHeight  = 7
 )
 
 type inputSuggestionMode int
